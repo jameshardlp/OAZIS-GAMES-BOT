@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кафе ОАЗИС</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Неоновая вывеска -->
+        <div class="neon-sign">
+            <h1 class="neon-text">ОАЗИС</h1>
+            <p class="neon-sub">Зомби-убежище • Техас 1999</p>
+        </div>
+
+        <!-- Основной контент -->
+        <div id="game-container">
+            <div id="lobby">
+                <h2>👥 Лобби</h2>
+                <div id="players-list"></div>
+                <button id="start-game" class="btn-neon">🔥 Начать игру</button>
+            </div>
+
+            <div id="game-area" style="display:none;">
+                <div id="character-cards">
+                    <h2>🎴 Твои карты</h2>
+                    <div id="cards-container"></div>
+                    <button id="reveal-card" class="btn-neon">🃏 Открыть карту</button>
+                </div>
+
+                <div id="voting-area" style="display:none;">
+                    <h2>🗳️ Голосование</h2>
+                    <div id="voting-list"></div>
+                    <button id="vote-btn" class="btn-neon">✅ Проголосовать</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Результаты -->
+        <div id="results" style="display:none;">
+            <h2>🏆 Итоги</h2>
+            <div id="results-list"></div>
+        </div>
+    </div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
