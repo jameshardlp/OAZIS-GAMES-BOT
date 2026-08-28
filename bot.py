@@ -1,31 +1,78 @@
+import sys
+import os
+import logging
 import asyncio
 import json
 import random
 import uuid
-import os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
+from dotenv import load_dotenv
 
 # ============================================
-# КОНФИГУРАЦИЯ
+# 1. ЗАГРУЖАЕМ .env ФАЙЛ
+# ============================================
+load_dotenv()  # Загружаем переменные из .env
+
+# ============================================
+# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ
+# ============================================
+sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
+sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 0)
+
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+
+print("=" * 60)
+print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
+print("=" * 60)
+sys.stdout.flush()
+
+# ============================================
+# 3. КОНФИГУРАЦИЯ (ВСЁ ИЗ .env!)
 # ============================================
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "ВАШ_ТОКЕН_ОТ_BOTFATHER")
-WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_ДОМЕН.bothost.tech")
+# 👇 ВСЕ СЕКРЕТЫ БЕРУТСЯ ИЗ .env
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
+PORT = int(os.getenv("PORT", 8082))
 
+# Проверяем, что токен загружен
+if not BOT_TOKEN:
+    print("❌ ОШИБКА: BOT_TOKEN не найден в .env файле!")
+    print("📝 Создай файл .env с содержимым:")
+    print("   BOT_TOKEN=твой_токен_от_BotFather")
+    print("   WEBAPP_URL=https://твой_домен.bothost.tech")
+    print("   PORT=8082")
+    sys.exit(1)
+
+if not WEBAPP_URL:
+    print("❌ ОШИБКА: WEBAPP_URL не найден в .env файле!")
+    sys.exit(1)
+
+print(f"🔌 Порт: {PORT}")
+print(f"🤖 Токен: ✅ Загружен из .env")
+print(f"🌐 URL: {WEBAPP_URL}")
+sys.stdout.flush()
+
+# ============================================
+# 4. ИНИЦИАЛИЗАЦИЯ
+# ============================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 games = {}
 CARDS = None
 
 # ============================================
-# HTML СТРАНИЦА (встроена в Python)
+# 5. HTML СТРАНИЦА (без изменений)
 # ============================================
-
 HTML_PAGE = '''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -40,21 +87,18 @@ HTML_PAGE = '''<!DOCTYPE html>
             <h1 class="neon-text">ОАЗИС</h1>
             <p class="neon-sub">Зомби-убежище • Техас 1999</p>
         </div>
-
         <div id="game-container">
             <div id="lobby">
                 <h2>👥 Лобби</h2>
                 <div id="players-list"></div>
                 <button id="start-game" class="btn-neon">🔥 Начать игру</button>
             </div>
-
             <div id="game-area" style="display:none;">
                 <div id="character-cards">
                     <h2>🎴 Твои карты</h2>
                     <div id="cards-container"></div>
                     <button id="reveal-card" class="btn-neon">🃏 Открыть карту</button>
                 </div>
-
                 <div id="voting-area" style="display:none;">
                     <h2>🗳️ Голосование</h2>
                     <div id="voting-list"></div>
@@ -62,28 +106,24 @@ HTML_PAGE = '''<!DOCTYPE html>
                 </div>
             </div>
         </div>
-
         <div id="results" style="display:none;">
             <h2>🏆 Итоги</h2>
             <div id="results-list"></div>
         </div>
     </div>
-
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="/app.js"></script>
 </body>
 </html>'''
 
 # ============================================
-# CSS СТИЛИ (встроены в Python)
+# 6. CSS СТИЛИ (без изменений)
 # ============================================
-
 CSS_STYLES = '''* {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
-
 body {
     background: #0a0a0a;
     color: #f5e6d3;
@@ -94,34 +134,25 @@ body {
     align-items: center;
     padding: 20px;
 }
-
 .neon-sign {
     text-align: center;
     margin-bottom: 40px;
 }
-
 .neon-text {
     font-size: 4rem;
     color: #ff6b35;
-    text-shadow: 
-        0 0 10px #ff6b35,
-        0 0 20px #ff6b35,
-        0 0 40px #ff6b35,
-        0 0 80px #ff6b35;
+    text-shadow: 0 0 10px #ff6b35, 0 0 20px #ff6b35, 0 0 40px #ff6b35, 0 0 80px #ff6b35;
     animation: neon-pulse 2s infinite;
 }
-
 @keyframes neon-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.7; }
 }
-
 .neon-sub {
     color: #ff6b35;
     opacity: 0.7;
     letter-spacing: 4px;
 }
-
 .character-card {
     background: linear-gradient(145deg, #1a0a00, #2a1a0a);
     border: 2px solid #ff6b35;
@@ -131,12 +162,10 @@ body {
     box-shadow: 0 0 20px rgba(255, 107, 53, 0.2);
     transition: transform 0.3s;
 }
-
 .character-card:hover {
     transform: scale(1.02);
     box-shadow: 0 0 40px rgba(255, 107, 53, 0.4);
 }
-
 .card-type {
     color: #ff6b35;
     font-weight: bold;
@@ -144,19 +173,16 @@ body {
     text-transform: uppercase;
     letter-spacing: 2px;
 }
-
 .card-name {
     font-size: 1.5rem;
     margin: 10px 0;
 }
-
 .card-effect {
     font-style: italic;
     opacity: 0.8;
     border-top: 1px solid #ff6b35;
     padding-top: 10px;
 }
-
 .btn-neon {
     background: transparent;
     color: #ff6b35;
@@ -170,13 +196,11 @@ body {
     width: 100%;
     margin: 10px 0;
 }
-
 .btn-neon:hover {
     background: #ff6b35;
     color: #0a0a0a;
     box-shadow: 0 0 30px rgba(255, 107, 53, 0.6);
 }
-
 .player-item {
     padding: 10px;
     margin: 5px 0;
@@ -184,50 +208,38 @@ body {
     border-radius: 8px;
     border-left: 3px solid #ff6b35;
 }
-
 .host-badge {
     color: #ffd700;
     margin-left: 10px;
 }
-
 .voting-card {
     cursor: pointer;
 }
-
 .voting-card input[type="radio"] {
     margin-top: 10px;
 }
-
 .result-card {
     padding: 20px;
     margin: 10px 0;
     border-radius: 12px;
 }
-
 .result-card.eliminated {
     background: #2a0a0a;
     border: 2px solid #ff0000;
 }
-
 .result-card.survivors {
     background: #0a2a0a;
     border: 2px solid #00ff00;
 }
-
 .survivor-item {
     padding: 5px;
     margin: 5px 0;
 }'''
 
 # ============================================
-# JAVASCRIPT КОД (встроен в Python!)
+# 7. JAVASCRIPT КОД
 # ============================================
-
-JS_CODE = '''// ============================================
-// КАФЕ ОАЗИС - Mini App Logic
-// ============================================
-
-const tg = window.Telegram.WebApp;
+JS_CODE = '''const tg = window.Telegram.WebApp;
 tg.expand();
 tg.enableClosingConfirmation();
 
@@ -243,9 +255,7 @@ const gameState = {
     isHost: false,
 };
 
-// ============================================
-// ИНИЦИАЛИЗАЦИЯ
-// ============================================
+const API_BASE = window.location.origin;
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('🤠 Кафе ОАЗИС загружено!');
@@ -256,7 +266,6 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log(`👤 Игрок: ${initData.user.first_name} (ID: ${gameState.playerId})`);
     }
     
-    // Получаем game_id из URL
     const urlParams = new URLSearchParams(window.location.search);
     gameState.gameId = urlParams.get('game_id');
     
@@ -276,13 +285,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('vote-btn')?.addEventListener('click', submitVote);
 });
 
-// ============================================
-// ПОДКЛЮЧЕНИЕ К ИГРЕ
-// ============================================
-
 async function connectToGame() {
     try {
-        const response = await fetch('/api/game/state', {
+        console.log('🔄 Подключение к API...');
+        console.log('📍 URL:', API_BASE + '/api/game/state');
+        
+        const response = await fetch(API_BASE + '/api/game/state', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -291,14 +299,15 @@ async function connectToGame() {
             })
         });
         
+        console.log('📡 Статус:', response.status);
         const data = await response.json();
+        console.log('📦 Данные:', data);
         
         if (data.status === 'success') {
             gameState.players = data.players || [];
             gameState.status = data.status || 'lobby';
             gameState.isHost = data.is_host || false;
             
-            // Если игрока нет в игре - присоединяемся
             const playerExists = gameState.players.some(p => p.id === gameState.playerId);
             if (!playerExists && gameState.status === 'waiting') {
                 await joinGame();
@@ -310,7 +319,7 @@ async function connectToGame() {
                 await getMyCards();
             }
         } else {
-            console.error('❌ Ошибка:', data.message);
+            console.error('❌ Ошибка:', data);
             tg.showPopup({
                 title: '❌ Ошибка',
                 message: data.message || 'Не удалось подключиться',
@@ -318,7 +327,12 @@ async function connectToGame() {
             });
         }
     } catch (error) {
-        console.error('❌ Network error:', error);
+        console.error('❌ Ошибка сети:', error);
+        tg.showPopup({
+            title: '❌ Ошибка сети',
+            message: 'Не удалось подключиться к серверу',
+            buttons: [{text: 'OK', type: 'default'}]
+        });
     }
 }
 
@@ -327,7 +341,7 @@ async function joinGame() {
         const initData = tg.initDataUnsafe;
         const userName = initData?.user?.first_name || 'Игрок';
         
-        const response = await fetch('/api/game/join', {
+        const response = await fetch(API_BASE + '/api/game/join', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -353,13 +367,9 @@ async function joinGame() {
     }
 }
 
-// ============================================
-// ПОЛУЧЕНИЕ КАРТ
-// ============================================
-
 async function getMyCards() {
     try {
-        const response = await fetch('/api/game/cards', {
+        const response = await fetch(API_BASE + '/api/game/cards', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -379,10 +389,6 @@ async function getMyCards() {
         console.error('❌ Ошибка получения карт:', error);
     }
 }
-
-// ============================================
-// НАЧАЛО ИГРЫ
-// ============================================
 
 async function startGame() {
     if (!gameState.isHost) {
@@ -404,7 +410,7 @@ async function startGame() {
     }
     
     try {
-        const response = await fetch('/api/game/start', {
+        const response = await fetch(API_BASE + '/api/game/start', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -417,29 +423,24 @@ async function startGame() {
         
         if (data.status === 'success') {
             gameState.status = 'playing';
-            gameState.currentRound = 0;
             updateUI();
             await getMyCards();
             tg.showPopup({
                 title: '🔥',
-                message: 'Игра началась! Всем разданы карты.',
+                message: 'Игра началась!',
                 buttons: [{text: 'OK', type: 'default'}]
             });
         } else {
             tg.showPopup({
                 title: '❌',
-                message: data.message || 'Не удалось начать игру',
+                message: data.message || 'Ошибка старта',
                 buttons: [{text: 'OK', type: 'default'}]
             });
         }
     } catch (error) {
-        console.error('❌ Ошибка старта:', error);
+        console.error('❌ Ошибка:', error);
     }
 }
-
-// ============================================
-// ОТКРЫТИЕ КАРТЫ
-// ============================================
 
 async function revealCard() {
     const cardIndex = gameState.myCards.findIndex(c => !c.isRevealed);
@@ -454,7 +455,7 @@ async function revealCard() {
     }
     
     try {
-        const response = await fetch('/api/game/reveal', {
+        const response = await fetch(API_BASE + '/api/game/reveal', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -471,39 +472,21 @@ async function revealCard() {
             gameState.revealedCards = data.revealed_cards || [];
             renderCards();
             
-            const cardName = gameState.myCards[cardIndex].name;
-            const cardType = gameState.myCards[cardIndex].type;
-            tg.showPopup({
-                title: '🎴',
-                message: `Открыто: ${cardType} - ${cardName}`,
-                buttons: [{text: 'OK', type: 'default'}]
-            });
-            
             if (gameState.myCards.every(c => c.isRevealed)) {
                 setTimeout(() => startVoting(), 1500);
             }
-        } else {
-            tg.showPopup({
-                title: '❌',
-                message: data.message || 'Не удалось открыть карту',
-                buttons: [{text: 'OK', type: 'default'}]
-            });
         }
     } catch (error) {
-        console.error('❌ Ошибка открытия карты:', error);
+        console.error('❌ Ошибка:', error);
     }
 }
-
-// ============================================
-// ГОЛОСОВАНИЕ
-// ============================================
 
 async function startVoting() {
     gameState.status = 'voting';
     updateUI();
     
     try {
-        const response = await fetch('/api/game/voting/players', {
+        const response = await fetch(API_BASE + '/api/game/voting/players', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -516,14 +499,9 @@ async function startVoting() {
         
         if (data.status === 'success') {
             renderVotingList(data.players);
-            tg.showPopup({
-                title: '🗳️',
-                message: 'Началось голосование! Выберите, кто не попадёт в убежище.',
-                buttons: [{text: 'OK', type: 'default'}]
-            });
         }
     } catch (error) {
-        console.error('❌ Ошибка голосования:', error);
+        console.error('❌ Ошибка:', error);
     }
 }
 
@@ -534,16 +512,13 @@ function renderVotingList(players) {
     players.forEach(player => {
         const card = document.createElement('div');
         card.className = 'character-card voting-card';
-        card.dataset.playerId = player.id;
-        
         card.innerHTML = `
             <div class="card-type">Игрок</div>
             <div class="card-name">${player.name}</div>
             <div class="card-effect">${player.role || 'Без роли'}</div>
             <input type="radio" name="vote" value="${player.id}" id="vote-${player.id}">
-            <label for="vote-${player.id}">Голосовать за этого</label>
+            <label for="vote-${player.id}">Голосовать</label>
         `;
-        
         container.appendChild(card);
     });
 }
@@ -554,7 +529,7 @@ async function submitVote() {
     if (!selected) {
         tg.showPopup({
             title: '⚠️',
-            message: 'Выберите игрока для голосования!',
+            message: 'Выберите игрока!',
             buttons: [{text: 'OK', type: 'default'}]
         });
         return;
@@ -563,7 +538,7 @@ async function submitVote() {
     const targetId = parseInt(selected.value);
     
     try {
-        const response = await fetch('/api/game/vote', {
+        const response = await fetch(API_BASE + '/api/game/vote', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -579,33 +554,14 @@ async function submitVote() {
             document.getElementById('vote-btn').disabled = true;
             tg.showPopup({
                 title: '✅',
-                message: 'Ваш голос учтён! Ожидаем остальных...',
-                buttons: [{text: 'OK', type: 'default'}]
-            });
-            
-            if (data.all_voted) {
-                setTimeout(() => {
-                    tg.sendData(JSON.stringify({
-                        action: 'game_finished',
-                        game_id: gameState.gameId,
-                    }));
-                }, 2000);
-            }
-        } else {
-            tg.showPopup({
-                title: '❌',
-                message: data.message || 'Ошибка голосования',
+                message: 'Голос учтён!',
                 buttons: [{text: 'OK', type: 'default'}]
             });
         }
     } catch (error) {
-        console.error('❌ Ошибка отправки голоса:', error);
+        console.error('❌ Ошибка:', error);
     }
 }
-
-// ============================================
-// UI ОБНОВЛЕНИЯ
-// ============================================
 
 function updateUI() {
     const lobby = document.getElementById('lobby');
@@ -661,7 +617,7 @@ function renderCards() {
     const container = document.getElementById('cards-container');
     container.innerHTML = '';
     
-    gameState.myCards.forEach((card, index) => {
+    gameState.myCards.forEach((card) => {
         const div = document.createElement('div');
         div.className = 'character-card';
         
@@ -679,7 +635,6 @@ function renderCards() {
             <div class="card-effect">${card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"'}</div>
             ${card.isRevealed ? `<div class="card-rarity">⭐ ${card.rarity || 'Обычная'}</div>` : ''}
         `;
-        
         container.appendChild(div);
     });
     
@@ -688,44 +643,11 @@ function renderCards() {
         `🃏 Открыть карту (осталось: ${remaining})`;
 }
 
-// ============================================
-// ПЕРИОДИЧЕСКОЕ ОБНОВЛЕНИЕ
-// ============================================
-
-setInterval(async () => {
-    if (gameState.status !== 'finished' && gameState.status !== 'voting') {
-        try {
-            const response = await fetch('/api/game/state', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    player_id: gameState.playerId,
-                    game_id: gameState.gameId,
-                })
-            });
-            
-            const data = await response.json();
-            
-            if (data.status === 'success' && data.status !== gameState.status) {
-                gameState.status = data.status;
-                updateUI();
-                
-                if (data.status === 'voting') {
-                    await startVoting();
-                }
-            }
-        } catch (error) {
-            // Игнорируем ошибки при фоновом обновлении
-        }
-    }
-}, 3000);
-
-console.log('✅ Mini App "Кафе ОАЗИС" готов к работе!')'''
+console.log('✅ Mini App готов!')'''
 
 # ============================================
-# ЗАГРУЗКА КАРТ
+# 8. ЗАГРУЗКА КАРТ
 # ============================================
-
 def load_cards():
     global CARDS
     try:
@@ -748,55 +670,38 @@ def load_cards():
             {"name": "Клоун-убийца", "description": "Смешит и убивает", "rarity": "легендарный"},
             {"name": "Сантехник", "description": "Чинит что угодно", "rarity": "обычный"},
             {"name": "Ютубер", "description": "Влог о выживании", "rarity": "обычный"},
-            {"name": "Бармен", "description": "Знает все коктейли", "rarity": "редкий"},
-            {"name": "Менеджер", "description": "Управляет людьми", "rarity": "обычный"},
         ],
         "health": [
             {"name": "Здоров как бык", "bonus": "+2 к выживанию"},
             {"name": "Ранен (царапина)", "bonus": "-1 к выживанию"},
             {"name": "Под кайфом", "bonus": "Иногда галлюцинации"},
             {"name": "При смерти", "bonus": "Требует лекарства"},
-            {"name": "Не выспался", "bonus": "-1 к харизме"},
-            {"name": "Голоден", "bonus": "Съел бы зомби"},
         ],
         "skills": [
             {"name": "Метание ножей", "effect": "Убивает зомби с 20 метров"},
             {"name": "Игра на гитаре", "effect": "Успокаивает зомби"},
             {"name": "Взлом автоматов", "effect": "Всегда есть еда"},
-            {"name": "Теннисный удар", "effect": "Отбивает головы зомби"},
-            {"name": "Разговор с животными", "effect": "Собаки помогают"},
-            {"name": "Паркур", "effect": "Убегает от зомби"},
-            {"name": "Кулинария", "effect": "Вкусно кормит группу"},
         ],
         "items": [
             {"name": "Кольт .45", "effect": "6 патронов"},
             {"name": "Фляга с виски", "effect": "Повышает настроение"},
             {"name": "Библия", "effect": "Отгоняет зомби"},
-            {"name": "Запасные носки", "effect": "Всегда пригодятся"},
-            {"name": "Бензопила", "effect": "Громкая, но эффективная"},
-            {"name": "Магический кристалл", "effect": "Работает или нет"},
-            {"name": "Кулинарная книга", "effect": "Как съесть зомби"},
         ],
         "secrets": [
             {"name": "Торговал с зомби", "effect": "Все недовольны"},
             {"name": "Убил напарника", "effect": "Не доверяют"},
-            {"name": "Был информатором", "effect": "Предатель"},
-            {"name": "Украл еду", "effect": "Недоверие"},
-            {"name": "Сделал фальшивку", "effect": "Все подозревают"},
         ]
     }
     print("✅ Используются дефолтные карты")
 
 # ============================================
-# КОМАНДЫ БОТА
+# 9. КОМАНДЫ БОТА
 # ============================================
-
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "Игра на выживание во время зомби-апокалипсиса.\n"
-        "Ты должен убедить других, что достоин места в убежище.\n\n"
         "🔫 Чтобы начать игру, используй команду /oasis"
     )
 
@@ -863,9 +768,8 @@ async def cmd_stop(message: types.Message):
         await message.answer("❌ Активной игры нет.")
 
 # ============================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# 10. ГЕНЕРАЦИЯ КАРТ
 # ============================================
-
 def generate_cards_for_player():
     cards = []
     
@@ -913,10 +817,18 @@ def generate_cards_for_player():
     return cards
 
 # ============================================
-# API ОБРАБОТЧИКИ
+# 11. API ОБРАБОТЧИКИ
 # ============================================
+async def api_test(request):
+    print("🧪 Тестовый API вызван!")
+    return web.json_response({
+        'status': 'success',
+        'message': 'API работает!',
+        'time': datetime.now().isoformat()
+    })
 
 async def api_get_state(request):
+    print(f"📨 GET STATE запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -932,8 +844,6 @@ async def api_get_state(request):
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         player = next((p for p in game['players'] if p['id'] == player_id), None)
-        if not player and game['status'] != 'waiting':
-            return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
         return web.json_response({
             'status': 'success',
@@ -945,9 +855,11 @@ async def api_get_state(request):
             'is_host': game['host_id'] == player_id if player else False,
         })
     except Exception as e:
+        print(f"❌ Ошибка: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_join_game(request):
+    print(f"📨 JOIN GAME запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -987,6 +899,7 @@ async def api_join_game(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_start_game(request):
+    print(f"📨 START GAME запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -1024,6 +937,7 @@ async def api_start_game(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_get_cards(request):
+    print(f"📨 GET CARDS запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -1051,6 +965,7 @@ async def api_get_cards(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_reveal_card(request):
+    print(f"📨 REVEAL CARD запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -1100,6 +1015,7 @@ async def api_reveal_card(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_get_voting_players(request):
+    print(f"📨 GET VOTING PLAYERS запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -1129,6 +1045,7 @@ async def api_get_voting_players(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_submit_vote(request):
+    print(f"📨 SUBMIT VOTE запрос")
     try:
         data = await request.json()
         player_id = data.get('player_id')
@@ -1198,9 +1115,8 @@ async def api_submit_vote(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 # ============================================
-# СТАТИЧЕСКИЕ ФАЙЛЫ (все в Python!)
+# 12. СТАТИЧЕСКИЕ ФАЙЛЫ
 # ============================================
-
 async def serve_html(request):
     return web.Response(text=HTML_PAGE, content_type='text/html')
 
@@ -1210,26 +1126,22 @@ async def serve_css(request):
 async def serve_js(request):
     return web.Response(text=JS_CODE, content_type='application/javascript')
 
-async def health_check(request):
-    return web.Response(text="OK")
-
 # ============================================
-# ЗАПУСК
+# 13. ЗАПУСК
 # ============================================
-
 async def main():
     load_cards()
     asyncio.create_task(dp.start_polling(bot))
     
     app = web.Application()
     
-    # Статические файлы (все из Python)
+    # Статика
     app.router.add_get('/', serve_html)
-    app.router.add_get('/index.html', serve_html)
     app.router.add_get('/style.css', serve_css)
     app.router.add_get('/app.js', serve_js)
     
-    # API
+    # API (ВСЕ ЭНДПОИНТЫ ЗДЕСЬ!)
+    app.router.add_get('/api/test', api_test)
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
     app.router.add_post('/api/game/start', api_start_game)
@@ -1238,19 +1150,26 @@ async def main():
     app.router.add_post('/api/game/voting/players', api_get_voting_players)
     app.router.add_post('/api/game/vote', api_submit_vote)
     
-    app.router.add_get('/health', health_check)
+    app.router.add_get('/health', lambda r: web.Response(text="OK"))
     
-    port = int(os.getenv('PORT', 8082))
+    # Запуск
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, host='0.0.0.0', port=port)
+    site = web.TCPSite(runner, host='0.0.0.0', port=PORT)
     
-    print(f"🤠 Бот 'Кафе ОАЗИС' запущен!")
+    print(f"✅ Сервер запущен на порту {PORT}")
     print(f"📱 Mini App: {WEBAPP_URL}")
-    print(f"🔌 Порт: {port}")
+    print(f"🧪 Тестовый API: {WEBAPP_URL}/api/test")
+    sys.stdout.flush()
     
     await site.start()
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        print(f"❌ ОШИБКА: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
