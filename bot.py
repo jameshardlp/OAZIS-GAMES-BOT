@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
+from aiogram.enums import ChatType
 from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
@@ -63,7 +64,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ)
+# 5. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -838,26 +839,45 @@ def load_cards():
     print("✅ Используются дефолтные карты")
 
 # ============================================
-# 8. КОМАНДЫ БОТА
+# 8. КОМАНДЫ БОТА (С ПОДДЕРЖКОЙ ГРУПП)
 # ============================================
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    await message.answer(
-        "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
-        "Игра на выживание во время зомби-апокалипсиса.\n"
-        "🔫 Чтобы начать игру, используй команду /oasis\n\n"
-        "📋 **Команды:**\n"
-        "/oasis - Создать игру\n"
-        "/link - Пригласить друзей (кнопка для присоединения)\n"
-        "/invite - То же самое, что и /link\n"
-        "/host - Назначить ведущего (ответь на сообщение игрока)\n"
-        "/host 123456789 - Назначить ведущего по ID\n"
-        "/host @username - Назначить ведущего по username\n"
-        "/whohost - Показать ведущего\n"
-        "/stop - Остановить игру (только ведущий)\n"
-        "/rules - Показать правила игры",
-        parse_mode="Markdown"
-    )
+    chat_type = message.chat.type
+    if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.answer(
+            "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
+            "Это игра на выживание во время зомби-апокалипсиса.\n\n"
+            "🔫 Чтобы начать игру, используй команду /oasis\n\n"
+            "📋 **Команды:**\n"
+            "/oasis - Создать игру\n"
+            "/link - Пригласить друзей (кнопка для присоединения)\n"
+            "/invite - То же самое, что и /link\n"
+            "/host - Назначить ведущего (ответь на сообщение игрока)\n"
+            "/host 123456789 - Назначить ведущего по ID\n"
+            "/host @username - Назначить ведущего по username\n"
+            "/whohost - Показать ведущего\n"
+            "/stop - Остановить игру (только ведущий)\n"
+            "/rules - Показать правила игры",
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
+            "Игра на выживание во время зомби-апокалипсиса.\n"
+            "🔫 Чтобы начать игру, используй команду /oasis\n\n"
+            "📋 **Команды:**\n"
+            "/oasis - Создать игру\n"
+            "/link - Пригласить друзей (кнопка для присоединения)\n"
+            "/invite - То же самое, что и /link\n"
+            "/host - Назначить ведущего (ответь на сообщение игрока)\n"
+            "/host 123456789 - Назначить ведущего по ID\n"
+            "/host @username - Назначить ведущего по username\n"
+            "/whohost - Показать ведущего\n"
+            "/stop - Остановить игру (только ведущий)\n"
+            "/rules - Показать правила игры",
+            parse_mode="Markdown"
+        )
 
 @dp.message(Command("oasis"))
 async def cmd_oasis(message: types.Message):
@@ -891,15 +911,29 @@ async def cmd_oasis(message: types.Message):
         [InlineKeyboardButton(text="📖 Правила игры", callback_data="rules")]
     ])
     
-    await message.answer(
-        f"🧟 ЗОМБИ-АПОКАЛИПСИС!\n\n"
-        f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
-        f"Мест хватит только на половину из вас.\n\n"
-        f"👑 Ведущий: {games[chat_id]['host_name']}\n"
-        f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
-        f"📋 Используй /link или /invite, чтобы пригласить друзей.",
-        reply_markup=keyboard
-    )
+    chat_type = message.chat.type
+    if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.answer(
+            f"🧟 **ЗОМБИ-АПОКАЛИПСИС!**\n\n"
+            f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
+            f"Мест хватит только на половину из вас.\n\n"
+            f"👑 **Ведущий:** {games[chat_id]['host_name']}\n"
+            f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
+            f"📋 Используй /link или /invite, чтобы пригласить друзей.",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
+    else:
+        await message.answer(
+            f"🧟 **ЗОМБИ-АПОКАЛИПСИС!**\n\n"
+            f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
+            f"Мест хватит только на половину из вас.\n\n"
+            f"👑 **Ведущий:** {games[chat_id]['host_name']}\n"
+            f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
+            f"📋 Используй /link или /invite, чтобы пригласить друзей.",
+            parse_mode="Markdown",
+            reply_markup=keyboard
+        )
 
 @dp.message(Command("link"))
 async def cmd_link(message: types.Message):
