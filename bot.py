@@ -63,7 +63,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ)
+# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ - ИСПРАВЛЕННАЯ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -224,7 +224,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 var data = await response.json();
                 debugLog('📦 Ответ: ' + JSON.stringify(data));
                 
-                // ★★★ ИСПРАВЛЕНО: проверяем наличие game_id ★★★
                 if (data.game_id) {{
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
@@ -238,7 +237,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     }});
                     debugLog('👤 В игре? ' + playerExists);
                     
-                    // ★★★ АВТОМАТИЧЕСКОЕ ПРИСОЕДИНЕНИЕ ★★★
                     if (!playerExists) {{
                         debugLog('🔄 Игрок не в игре! Присоединяемся...');
                         await joinGame();
@@ -496,12 +494,13 @@ HTML_PAGE = f'''<!DOCTYPE html>
             players.forEach(function(player) {{
                 var card = document.createElement('div');
                 card.className = 'character-card voting-card';
+                var roleText = player.role || 'Без роли';
                 card.innerHTML = `
                     <div class="card-type">Игрок</div>
-                    <div class="card-name">${player.name}</div>
-                    <div class="card-effect">${player.role || 'Без роли'}</div>
-                    <input type="radio" name="vote" value="${player.id}" id="vote-${player.id}">
-                    <label for="vote-${player.id}">Голосовать</label>
+                    <div class="card-name">${{player.name}}</div>
+                    <div class="card-effect">${{roleText}}</div>
+                    <input type="radio" name="vote" value="${{player.id}}" id="vote-${{player.id}}">
+                    <label for="vote-${{player.id}}">Голосовать</label>
                 `;
                 container.appendChild(card);
             }});
@@ -578,9 +577,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
             gameState.players.forEach(function(player) {{
                 var div = document.createElement('div');
                 div.className = 'player-item';
+                var hostBadge = player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : '';
                 div.innerHTML = `
-                    <span>👤 ${player.name}</span>
-                    ${player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : ''}
+                    <span>👤 ${{player.name}}</span>
+                    ${{hostBadge}}
                 `;
                 container.appendChild(div);
             }});
@@ -615,11 +615,15 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     div.style.opacity = '0.7';
                 }}
                 
+                var cardName = card.isRevealed ? card.name : '❓ Скрыто';
+                var cardEffect = card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"';
+                var cardRarity = card.isRevealed ? '<div class="card-rarity">⭐ ' + (card.rarity || 'Обычная') + '</div>' : '';
+                
                 div.innerHTML = `
-                    <div class="card-type">${card.type || 'Карта'}</div>
-                    <div class="card-name">${card.isRevealed ? card.name : '❓ Скрыто'}</div>
-                    <div class="card-effect">${card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"'}</div>
-                    ${card.isRevealed ? '<div class="card-rarity">⭐ ' + (card.rarity || 'Обычная') + '</div>' : ''}
+                    <div class="card-type">${{card.type || 'Карта'}}</div>
+                    <div class="card-name">${{cardName}}</div>
+                    <div class="card-effect">${{cardEffect}}</div>
+                    ${{cardRarity}}
                 `;
                 container.appendChild(div);
             }});
