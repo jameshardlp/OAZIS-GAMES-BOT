@@ -2,15 +2,13 @@ import asyncio
 import json
 import random
 import uuid
+import os
 from datetime import datetime
-from aiogram import Bot, Dispatcher, types, F
+from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Message
 from aiohttp import web, ClientSession
-import sys
-import os
 
 # ============================================
 # КОНФИГУРАЦИЯ
@@ -23,57 +21,84 @@ WEBAPP_URL = os.getenv("WEBAPP_URL", "https://ВАШ_ДОМЕН.bothost.tech")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 
-# Хранилище игр (в памяти)
+# Хранилище игр
 games = {}
-players = {}
+CARDS = None
 
 # ============================================
 # ЗАГРУЗКА КАРТ
 # ============================================
 
 def load_cards():
+    global CARDS
     try:
+        # Пробуем загрузить из файла
         with open('cards.json', 'r', encoding='utf-8') as f:
-            return json.load(f)
+            CARDS = json.load(f)
+            print("✅ Карты загружены из cards.json")
+            return
     except:
-        # Если файла нет, создаём дефолтные карты
-        return {
-            "roles": [
-                {"name": "Шериф", "description": "Владеет револьвером и авторитетом", "rarity": "редкий"},
-                {"name": "Продавец мороженого", "description": "Всегда носит с собой вафельный стаканчик", "rarity": "обычный"},
-                {"name": "Таксист", "description": "Знает все дороги в городе", "rarity": "обычный"},
-                {"name": "Инфлюенсер", "description": "Снимает всё на телефон, даже зомби", "rarity": "легендарный"},
-                {"name": "Повар", "description": "Может приготовить что угодно, даже зомби-стейк", "rarity": "редкий"},
-            ],
-            "health": [
-                {"name": "Здоров как бык", "bonus": "+2 к выживанию"},
-                {"name": "Ранен (царапина)", "bonus": "-1 к выживанию"},
-                {"name": "Под кайфом", "bonus": "Иногда галлюцинации"},
-            ],
-            "skills": [
-                {"name": "Метание ножей", "effect": "Может убить зомби с 20 метров"},
-                {"name": "Игра на гитаре", "effect": "Успокаивает зомби"},
-                {"name": "Взлом автоматов", "effect": "Всегда есть еда"},
-            ],
-            "items": [
-                {"name": "Кольт .45", "effect": "6 патронов"},
-                {"name": "Фляга с виски", "effect": "Повышает настроение"},
-                {"name": "Библия", "effect": "Отгоняет зомби крестом"},
-            ],
-            "secrets": [
-                {"name": "Торговал с зомби", "effect": "Все будут недовольны"},
-                {"name": "Убил напарника", "effect": "Больше никому не доверяют"},
-            ]
-        }
-
-CARDS = load_cards()
+        pass
+    
+    # Если файла нет, создаём дефолтные карты
+    CARDS = {
+        "roles": [
+            {"name": "Шериф", "description": "Владеет револьвером и авторитетом", "rarity": "редкий"},
+            {"name": "Продавец мороженого", "description": "Всегда носит с собой вафельный стаканчик", "rarity": "обычный"},
+            {"name": "Таксист", "description": "Знает все дороги в городе", "rarity": "обычный"},
+            {"name": "Инфлюенсер", "description": "Снимает всё на телефон, даже зомби", "rarity": "легендарный"},
+            {"name": "Повар", "description": "Может приготовить что угодно, даже зомби-стейк", "rarity": "редкий"},
+            {"name": "Фокусник", "description": "Умеет делать предметы исчезать", "rarity": "редкий"},
+            {"name": "Медиум", "description": "Разговаривает с духами умерших", "rarity": "эпический"},
+            {"name": "Клоун-убийца", "description": "Смешит и убивает одновременно", "rarity": "легендарный"},
+            {"name": "Сантехник", "description": "Может починить что угодно", "rarity": "обычный"},
+            {"name": "Ютубер", "description": "Снимает влог о выживании", "rarity": "обычный"},
+            {"name": "Бармен", "description": "Знает все коктейли и секреты", "rarity": "редкий"},
+            {"name": "Менеджер", "description": "Умеет управлять людьми", "rarity": "обычный"},
+            {"name": "Таксидермист", "description": "Чучела животных — его страсть", "rarity": "странный"},
+        ],
+        "health": [
+            {"name": "Здоров как бык", "bonus": "+2 к выживанию"},
+            {"name": "Ранен (царапина)", "bonus": "-1 к выживанию"},
+            {"name": "Под кайфом", "bonus": "Иногда галлюцинации"},
+            {"name": "При смерти", "bonus": "Требует лекарства"},
+            {"name": "Не выспался", "bonus": "-1 к харизме"},
+            {"name": "Голоден", "bonus": "Съел бы зомби"},
+        ],
+        "skills": [
+            {"name": "Метание ножей", "effect": "Может убить зомби с 20 метров"},
+            {"name": "Игра на гитаре", "effect": "Успокаивает зомби"},
+            {"name": "Взлом автоматов", "effect": "Всегда есть еда"},
+            {"name": "Теннисный удар", "effect": "Отбивает головы зомби"},
+            {"name": "Разговор с животными", "effect": "Собаки и кошки помогают"},
+            {"name": "Паркур", "effect": "Может убегать от зомби"},
+            {"name": "Кулинария", "effect": "Вкусно кормит группу"},
+        ],
+        "items": [
+            {"name": "Кольт .45", "effect": "6 патронов"},
+            {"name": "Фляга с виски", "effect": "Повышает настроение"},
+            {"name": "Библия", "effect": "Отгоняет зомби крестом"},
+            {"name": "Запасные носки", "effect": "Чистые, всегда пригодятся"},
+            {"name": "Бензопила", "effect": "Очень громкая, но эффективная"},
+            {"name": "Магический кристалл", "effect": "Работает или нет — хз"},
+            {"name": "Кулинарная книга", "effect": "Как съесть зомби"},
+        ],
+        "secrets": [
+            {"name": "Торговал с зомби", "effect": "Все будут недовольны"},
+            {"name": "Убил напарника", "effect": "Больше никому не доверяют"},
+            {"name": "Был информатором", "effect": "Предатель"},
+            {"name": "Украл еду у других", "effect": "Недоверие"},
+            {"name": "Сделал фальшивую карту", "effect": "Все подозревают"},
+        ]
+    }
+    print("✅ Используются дефолтные карты")
 
 # ============================================
 # КОМАНДЫ БОТА
 # ============================================
 
 @dp.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: types.Message):
     await message.answer(
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "Это игра на выживание во время зомби-апокалипсиса.\n"
@@ -82,7 +107,7 @@ async def cmd_start(message: Message):
     )
 
 @dp.message(Command("oasis"))
-async def cmd_oasis(message: Message):
+async def cmd_oasis(message: types.Message):
     """Создание игры в канале"""
     chat_id = str(message.chat.id)
     
@@ -97,7 +122,7 @@ async def cmd_oasis(message: Message):
         'game_id': game_id,
         'chat_id': chat_id,
         'players': [],
-        'status': 'waiting',  # waiting, playing, voting, finished
+        'status': 'waiting',
         'round': 0,
         'max_rounds': 5,
         'host_id': message.from_user.id,
@@ -141,8 +166,7 @@ async def show_rules(callback: types.CallbackQuery):
     )
 
 @dp.message(Command("stop"))
-async def cmd_stop(message: Message):
-    """Принудительно остановить игру"""
+async def cmd_stop(message: types.Message):
     chat_id = str(message.chat.id)
     if chat_id in games:
         del games[chat_id]
@@ -151,38 +175,78 @@ async def cmd_stop(message: Message):
         await message.answer("❌ Активной игры нет.")
 
 # ============================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================
+
+def generate_cards_for_player():
+    """Генерирует случайный набор карт для игрока"""
+    cards = []
+    
+    role = random.choice(CARDS['roles'])
+    cards.append({
+        'type': 'Роль',
+        'name': role['name'],
+        'description': role['description'],
+        'rarity': role.get('rarity', 'обычный'),
+        'isRevealed': False,
+    })
+    
+    health = random.choice(CARDS['health'])
+    cards.append({
+        'type': 'Здоровье',
+        'name': health['name'],
+        'effect': health.get('bonus', ''),
+        'isRevealed': False,
+    })
+    
+    skill = random.choice(CARDS['skills'])
+    cards.append({
+        'type': 'Навык',
+        'name': skill['name'],
+        'effect': skill.get('effect', ''),
+        'isRevealed': False,
+    })
+    
+    item = random.choice(CARDS['items'])
+    cards.append({
+        'type': 'Предмет',
+        'name': item['name'],
+        'effect': item.get('effect', ''),
+        'isRevealed': False,
+    })
+    
+    secret = random.choice(CARDS['secrets'])
+    cards.append({
+        'type': 'Секрет',
+        'name': secret['name'],
+        'effect': secret.get('effect', ''),
+        'isRevealed': False,
+    })
+    
+    return cards
+
+# ============================================
 # API ОБРАБОТЧИКИ ДЛЯ MINI APP
 # ============================================
 
 async def api_get_state(request):
-    """Получить состояние игры"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        # Ищем игру
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Проверяем, есть ли игрок
         player = next((p for p in game['players'] if p['id'] == player_id), None)
         if not player and game['status'] != 'waiting':
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игрок не найден'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
         return web.json_response({
             'status': 'success',
@@ -193,49 +257,31 @@ async def api_get_state(request):
             'max_rounds': game['max_rounds'],
             'is_host': game['host_id'] == player_id,
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_join_game(request):
-    """Присоединиться к игре"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         player_name = data.get('player_name')
         game_id = data.get('game_id')
         
-        # Ищем игру
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         if game['status'] != 'waiting':
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра уже началась'
-            }, status=400)
+            return web.json_response({'status': 'error', 'message': 'Игра уже началась'}, status=400)
         
         if len(game['players']) >= 6:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра заполнена (максимум 6 игроков)'
-            }, status=400)
+            return web.json_response({'status': 'error', 'message': 'Игра заполнена'}, status=400)
         
-        # Добавляем игрока
         player = {
             'id': player_id,
             'name': player_name,
@@ -250,48 +296,30 @@ async def api_join_game(request):
             'message': f'Игрок {player_name} присоединился',
             'players': game['players'],
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_start_game(request):
-    """Начать игру (только хост)"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        # Ищем игру
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         if game['host_id'] != player_id:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Только ведущий может начать игру'
-            }, status=403)
+            return web.json_response({'status': 'error', 'message': 'Только ведущий'}, status=403)
         
         if len(game['players']) < 4:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Нужно минимум 4 игрока'
-            }, status=400)
+            return web.json_response({'status': 'error', 'message': 'Нужно минимум 4 игрока'}, status=400)
         
-        # Раздаём карты каждому игроку
         for player in game['players']:
             player['cards'] = generate_cards_for_player()
             player['revealed'] = []
@@ -299,9 +327,8 @@ async def api_start_game(request):
         game['status'] = 'playing'
         game['round'] = 1
         
-        # Уведомление в чат
         await bot.send_message(
-            chat_id,
+            game['chat_id'],
             f"🔥 ИГРА НАЧАЛАСЬ!\n\n"
             f"👥 Игроков: {len(game['players'])}\n"
             f"📝 Раунд 1 из {game['max_rounds']}\n\n"
@@ -311,23 +338,16 @@ async def api_start_game(request):
         return web.json_response({
             'status': 'success',
             'message': 'Игра началась',
-            'game_id': game['game_id'],
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_get_cards(request):
-    """Получить карты игрока"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        # Ищем игру
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -335,40 +355,27 @@ async def api_get_cards(request):
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Ищем игрока
         player = next((p for p in game['players'] if p['id'] == player_id), None)
         if not player:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игрок не найден'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
         return web.json_response({
             'status': 'success',
             'cards': player['cards'],
             'revealed': player['revealed'],
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_reveal_card(request):
-    """Открыть карту"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         card_index = data.get('card_index')
         
-        # Ищем игру
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -376,45 +383,30 @@ async def api_reveal_card(request):
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Ищем игрока
         player = next((p for p in game['players'] if p['id'] == player_id), None)
         if not player:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игрок не найден'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
         if card_index >= len(player['cards']):
-            return web.json_response({
-                'status': 'error',
-                'message': 'Неверный индекс карты'
-            }, status=400)
+            return web.json_response({'status': 'error', 'message': 'Неверный индекс'}, status=400)
         
-        # Открываем карту
         card = player['cards'][card_index]
         card['isRevealed'] = True
         player['revealed'].append(card)
         
-        # Проверяем, все ли карты открыты у всех игроков
         all_revealed = True
         for p in game['players']:
             if len(p['revealed']) < len(p['cards']):
                 all_revealed = False
                 break
         
-        # Если все открыли карты, переходим к голосованию
         if all_revealed and game['status'] == 'playing':
             game['status'] = 'voting'
             await bot.send_message(
                 game['chat_id'],
-                f"🗳️ ГОЛОСОВАНИЕ!\n\n"
-                f"Все игроки открыли карты. Теперь нужно выбрать, кто не попадёт в убежище.\n"
-                f"Голосуйте в приложении!"
+                f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки открыли карты. Голосуйте в приложении!"
             )
         
         return web.json_response({
@@ -423,21 +415,15 @@ async def api_reveal_card(request):
             'revealed_cards': player['revealed'],
             'all_revealed': all_revealed,
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_get_voting_players(request):
-    """Получить список игроков для голосования"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        # Ищем игру
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -445,17 +431,13 @@ async def api_get_voting_players(request):
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Возвращаем всех игроков кроме самого голосующего
         players_for_vote = [
             {
                 'id': p['id'],
                 'name': p['name'],
-                'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'role'), 'Неизвестно')
+                'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
             if p['id'] != player_id
@@ -465,22 +447,16 @@ async def api_get_voting_players(request):
             'status': 'success',
             'players': players_for_vote,
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_submit_vote(request):
-    """Отправить голос"""
     try:
         data = await request.json()
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         target_id = data.get('target_id')
         
-        # Ищем игру
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -488,26 +464,17 @@ async def api_submit_vote(request):
                 break
         
         if not game:
-            return web.json_response({
-                'status': 'error',
-                'message': 'Игра не найдена'
-            }, status=404)
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Сохраняем голос
-        if 'votes' not in game:
-            game['votes'] = {}
         game['votes'][player_id] = target_id
         
-        # Проверяем, все ли проголосовали
         all_voted = len(game['votes']) == len(game['players'])
         
         if all_voted:
-            # Подводим итоги голосования
             vote_results = {}
             for voter, target in game['votes'].items():
                 vote_results[target] = vote_results.get(target, 0) + 1
             
-            # Находим игрока с наибольшим количеством голосов
             max_votes = max(vote_results.values())
             eliminated = [p for p in game['players'] if p['id'] in vote_results and vote_results[p['id']] == max_votes]
             
@@ -516,31 +483,29 @@ async def api_submit_vote(request):
                 game['eliminated'].append(eliminated_player)
                 game['players'] = [p for p in game['players'] if p['id'] != eliminated_player['id']]
                 
-                # Уведомление в чат
                 await bot.send_message(
                     game['chat_id'],
                     f"🧟 ВЫБЫВАЕТ: {eliminated_player['name']}\n\n"
-                    f"Причина: Большинство голосов ({max_votes} из {len(game['votes'])})\n"
-                    f"Осталось игроков: {len(game['players'])}"
+                    f"Голосов: {max_votes} из {len(game['votes'])}\n"
+                    f"Осталось: {len(game['players'])} игроков"
                 )
             
-            # Проверяем, осталось ли достаточно игроков
-            if len(game['players']) <= len(game['players']) / 2:
+            if len(game['players']) <= len(game['players']) / 2 + 1:
                 game['status'] = 'finished'
+                survivors = [p['name'] for p in game['players']]
                 await bot.send_message(
                     game['chat_id'],
                     f"🏆 ВЫЖИВШИЕ!\n\n"
-                    f"Группа заперлась в подсобке кафе.\n"
-                    f"Снаружи слышен вой зомби.\n"
-                    f"Они выжили до рассвета! 🎉"
+                    f"{', '.join(survivors)} заперлись в подсобке кафе.\n"
+                    f"Зомби не прошли! Они выжили до рассвета! 🎉"
                 )
+                # Удаляем игру после финала
+                # del games[game['chat_id']]
             else:
-                # Переходим к следующему раунду
                 game['round'] += 1
                 game['status'] = 'playing'
                 game['votes'] = {}
                 
-                # Сбрасываем открытые карты у всех
                 for p in game['players']:
                     p['revealed'] = []
                     for card in p['cards']:
@@ -548,8 +513,7 @@ async def api_submit_vote(request):
                 
                 await bot.send_message(
                     game['chat_id'],
-                    f"📝 РАУНД {game['round']}\n\n"
-                    f"Новый раунд! Открывайте карты по очереди."
+                    f"📝 РАУНД {game['round']}\n\nНовый раунд! Открывайте карты."
                 )
         
         return web.json_response({
@@ -558,116 +522,62 @@ async def api_submit_vote(request):
             'vote_count': len(game['votes']),
             'total_players': len(game['players']),
         })
-        
     except Exception as e:
-        return web.json_response({
-            'status': 'error',
-            'message': str(e)
-        }, status=500)
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 # ============================================
-# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# СТАТИЧЕСКИЕ ФАЙЛЫ (главное исправление!)
 # ============================================
 
-def generate_cards_for_player():
-    """Генерирует случайный набор карт для игрока"""
-    cards = []
+async def serve_static(request):
+    """Отдаём статические файлы из папки mini-app"""
+    path = request.path
     
-    # Роль
-    role = random.choice(CARDS['roles'])
-    cards.append({
-        'type': 'Роль',
-        'name': role['name'],
-        'description': role['description'],
-        'rarity': role.get('rarity', 'обычный'),
-        'isRevealed': False,
-    })
+    # Если запрос корневой или на index.html
+    if path == '/' or path == '/index.html':
+        try:
+            with open('mini-app/index.html', 'r', encoding='utf-8') as f:
+                return web.Response(text=f.read(), content_type='text/html')
+        except:
+            return web.Response(text="<h1>Кафе ОАЗИС</h1><p>Загрузка...</p>", content_type='text/html')
     
-    # Здоровье
-    health = random.choice(CARDS['health'])
-    cards.append({
-        'type': 'Здоровье',
-        'name': health['name'],
-        'effect': health.get('bonus', ''),
-        'isRevealed': False,
-    })
+    # CSS
+    if path == '/style.css':
+        try:
+            with open('mini-app/style.css', 'r', encoding='utf-8') as f:
+                return web.Response(text=f.read(), content_type='text/css')
+        except:
+            return web.Response(text="/* CSS */", content_type='text/css')
     
-    # Навык
-    skill = random.choice(CARDS['skills'])
-    cards.append({
-        'type': 'Навык',
-        'name': skill['name'],
-        'effect': skill.get('effect', ''),
-        'isRevealed': False,
-    })
+    # JS (ВАЖНО: это клиентский JS, его НЕЛЬЗЯ запускать на сервере!)
+    if path == '/app.js':
+        try:
+            with open('mini-app/app.js', 'r', encoding='utf-8') as f:
+                return web.Response(text=f.read(), content_type='application/javascript')
+        except:
+            return web.Response(text="// JS файл не найден", content_type='application/javascript')
     
-    # Предмет
-    item = random.choice(CARDS['items'])
-    cards.append({
-        'type': 'Предмет',
-        'name': item['name'],
-        'effect': item.get('effect', ''),
-        'isRevealed': False,
-    })
-    
-    # Секрет
-    secret = random.choice(CARDS['secrets'])
-    cards.append({
-        'type': 'Секрет',
-        'name': secret['name'],
-        'effect': secret.get('effect', ''),
-        'isRevealed': False,
-    })
-    
-    return cards
-
-# ============================================
-# ЗАПУСК HTTP СЕРВЕРА ДЛЯ MINI APP
-# ============================================
-
-async def handle_index(request):
-    """Отдаём index.html"""
-    try:
-        with open('mini-app/index.html', 'r', encoding='utf-8') as f:
-            return web.Response(text=f.read(), content_type='text/html')
-    except:
-        return web.Response(text="<h1>Кафе ОАЗИС</h1><p>Mini App загружается...</p>", content_type='text/html')
-
-async def handle_style(request):
-    """Отдаём style.css"""
-    try:
-        with open('mini-app/style.css', 'r', encoding='utf-8') as f:
-            return web.Response(text=f.read(), content_type='text/css')
-    except:
-        return web.Response(text="/* CSS */", content_type='text/css')
-
-async def handle_app_js(request):
-    """Отдаём app.js"""
-    try:
-        with open('mini-app/app.js', 'r', encoding='utf-8') as f:
-            return web.Response(text=f.read(), content_type='application/javascript')
-    except:
-        return web.Response(text="// JS", content_type='application/javascript')
-
-async def handle_polling(request):
-    """Для long polling или webhook"""
-    return web.Response(text="OK")
+    return web.Response(status=404, text="404 Not Found")
 
 # ============================================
 # ЗАПУСК
 # ============================================
 
 async def main():
+    # Загружаем карты
+    load_cards()
+    
     # Запускаем бота в фоне
     asyncio.create_task(dp.start_polling(bot))
     
-    # Создаём HTTP сервер для Mini App
+    # Создаём HTTP сервер
     app = web.Application()
     
-    # Статика
-    app.router.add_get('/', handle_index)
-    app.router.add_get('/style.css', handle_style)
-    app.router.add_get('/app.js', handle_app_js)
+    # Статические файлы (все через одну функцию)
+    app.router.add_get('/', serve_static)
+    app.router.add_get('/index.html', serve_static)
+    app.router.add_get('/style.css', serve_static)
+    app.router.add_get('/app.js', serve_static)
     
     # API эндпоинты
     app.router.add_post('/api/game/state', api_get_state)
@@ -678,21 +588,20 @@ async def main():
     app.router.add_post('/api/game/voting/players', api_get_voting_players)
     app.router.add_post('/api/game/vote', api_submit_vote)
     
-    # Для health check
-    app.router.add_get('/polling', handle_polling)
+    # Health check
+    app.router.add_get('/health', lambda r: web.Response(text="OK"))
     
-    # Запускаем HTTP сервер
+    # Запускаем сервер
     port = int(os.getenv('PORT', 8080))
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host='0.0.0.0', port=port)
     
-    print(f"🤠 Бот и Mini App запущены на порту {port}")
-    print(f"📱 Mini App доступен по адресу: {WEBAPP_URL}")
+    print(f"🤠 Бот 'Кафе ОАЗИС' запущен!")
+    print(f"📱 Mini App: {WEBAPP_URL}")
+    print(f"🔌 Порт: {port}")
     
     await site.start()
-    
-    # Держим сервер запущенным
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
