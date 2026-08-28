@@ -63,7 +63,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ - ИСПРАВЛЕННАЯ)
+# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -846,13 +846,17 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "Игра на выживание во время зомби-апокалипсиса.\n"
         "🔫 Чтобы начать игру, используй команду /oasis\n\n"
-        "📋 Команды:\n"
+        "📋 **Команды:**\n"
         "/oasis - Создать игру\n"
+        "/link - Показать ссылку для приглашения (можно копировать)\n"
+        "/invite - То же самое, что и /link\n"
         "/host - Назначить ведущего (ответь на сообщение игрока)\n"
         "/host 123456789 - Назначить ведущего по ID\n"
         "/host @username - Назначить ведущего по username\n"
         "/whohost - Показать ведущего\n"
-        "/stop - Остановить игру (только ведущий)"
+        "/stop - Остановить игру (только ведущий)\n"
+        "/rules - Показать правила игры",
+        parse_mode="Markdown"
     )
 
 @dp.message(Command("oasis"))
@@ -892,7 +896,80 @@ async def cmd_oasis(message: types.Message):
         f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
         f"Мест хватит только на половину из вас.\n\n"
         f"👑 Ведущий: {games[chat_id]['host_name']}\n"
-        f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.",
+        f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
+        f"📋 Используй /link или /invite, чтобы получить ссылку для приглашения друзей.",
+        reply_markup=keyboard
+    )
+
+@dp.message(Command("link"))
+async def cmd_link(message: types.Message):
+    """Показать ссылку для приглашения в игру"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
+        return
+    
+    game_id = games[chat_id]['game_id']
+    webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
+    
+    await message.answer(
+        f"🔗 **ССЫЛКА ДЛЯ ПРИГЛАШЕНИЯ:**\n"
+        f"`{webapp_url}`\n\n"
+        f"📋 **Как использовать:**\n"
+        f"1️⃣ Скопируй ссылку выше\n"
+        f"2️⃣ Отправь её друзьям\n"
+        f"3️⃣ Они нажимают на ссылку → присоединяются к игре\n\n"
+        f"👥 **Сейчас в игре:** {len(games[chat_id]['players'])} игроков\n"
+        f"👑 **Ведущий:** {games[chat_id]['host_name']}",
+        parse_mode="Markdown"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔫 Открыть игру",
+            web_app=WebAppInfo(url=webapp_url)
+        )]
+    ])
+    
+    await message.answer(
+        "📱 Или нажми кнопку, чтобы открыть игру:",
+        reply_markup=keyboard
+    )
+
+@dp.message(Command("invite"))
+async def cmd_invite(message: types.Message):
+    """Алиас для /link"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
+        return
+    
+    game_id = games[chat_id]['game_id']
+    webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
+    
+    await message.answer(
+        f"🔗 **ССЫЛКА ДЛЯ ПРИГЛАШЕНИЯ:**\n"
+        f"`{webapp_url}`\n\n"
+        f"📋 **Как использовать:**\n"
+        f"1️⃣ Скопируй ссылку выше\n"
+        f"2️⃣ Отправь её друзьям\n"
+        f"3️⃣ Они нажимают на ссылку → присоединяются к игре\n\n"
+        f"👥 **Сейчас в игре:** {len(games[chat_id]['players'])} игроков\n"
+        f"👑 **Ведущий:** {games[chat_id]['host_name']}",
+        parse_mode="Markdown"
+    )
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔫 Открыть игру",
+            web_app=WebAppInfo(url=webapp_url)
+        )]
+    ])
+    
+    await message.answer(
+        "📱 Или нажми кнопку, чтобы открыть игру:",
         reply_markup=keyboard
     )
 
@@ -920,7 +997,7 @@ async def cmd_host(message: types.Message):
                 break
         
         if not player_in_game:
-            await message.answer(f"❌ Игрок {target_name} не в игре! Он должен присоединиться через /oasis")
+            await message.answer(f"❌ Игрок {target_name} не в игре! Он должен присоединиться через ссылку")
             return
         
         games[chat_id]['host_id'] = target_id
@@ -1003,9 +1080,11 @@ async def cmd_whohost(message: types.Message):
             break
     
     await message.answer(
-        f"👑 Текущий ведущий:\n"
+        f"👑 **Текущий ведущий:**\n"
         f"Имя: {host_name}\n"
-        f"Статус: {'✅ В игре' if host_in_game else '❌ Не в игре'}"
+        f"Статус: {'✅ В игре' if host_in_game else '❌ Не в игре'}\n"
+        f"👥 Всего игроков: {len(games[chat_id]['players'])}",
+        parse_mode="Markdown"
     )
 
 @dp.message(Command("stop"))
@@ -1027,14 +1106,16 @@ async def cmd_stop_game(message: types.Message):
 async def show_rules(callback: types.CallbackQuery):
     await callback.answer()
     await callback.message.answer(
-        "📖 ПРАВИЛА ИГРЫ 'КАФЕ ОАЗИС'\n\n"
+        "📖 **ПРАВИЛА ИГРЫ 'КАФЕ ОАЗИС'**\n\n"
         "1️⃣ Каждый получает 5 карт: Роль, Здоровье, Навык, Предмет, Секрет\n"
         "2️⃣ За 5 раундов нужно убедить других, что ты достоин остаться\n"
         "3️⃣ В каждом раунде игроки по очереди открывают карту\n"
         "4️⃣ После обсуждения - тайное голосование\n"
         "5️⃣ Кто набрал больше голосов - выбывает\n"
         "6️⃣ Побеждают те, кто остался в живых\n\n"
-        "🎯 Главное - харизма и убеждение!"
+        "🎯 Главное - харизма и убеждение!\n"
+        "🔥 Игра создана по мотивам 'Бункера' в сеттинге зомби-апокалипсиса",
+        parse_mode="Markdown"
     )
 
 # ============================================
