@@ -848,7 +848,7 @@ async def cmd_start(message: types.Message):
         "🔫 Чтобы начать игру, используй команду /oasis\n\n"
         "📋 **Команды:**\n"
         "/oasis - Создать игру\n"
-        "/link - Показать ссылку для приглашения (можно копировать)\n"
+        "/link - Пригласить друзей (кнопка для присоединения)\n"
         "/invite - То же самое, что и /link\n"
         "/host - Назначить ведущего (ответь на сообщение игрока)\n"
         "/host 123456789 - Назначить ведущего по ID\n"
@@ -897,13 +897,13 @@ async def cmd_oasis(message: types.Message):
         f"Мест хватит только на половину из вас.\n\n"
         f"👑 Ведущий: {games[chat_id]['host_name']}\n"
         f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
-        f"📋 Используй /link или /invite, чтобы получить ссылку для приглашения друзей.",
+        f"📋 Используй /link или /invite, чтобы пригласить друзей.",
         reply_markup=keyboard
     )
 
 @dp.message(Command("link"))
 async def cmd_link(message: types.Message):
-    """Показать ссылку для приглашения в игру"""
+    """Показать приглашение в игру с кнопкой"""
     chat_id = str(message.chat.id)
     
     if chat_id not in games:
@@ -913,33 +913,28 @@ async def cmd_link(message: types.Message):
     game_id = games[chat_id]['game_id']
     webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
     
-    await message.answer(
-        f"🔗 **ССЫЛКА ДЛЯ ПРИГЛАШЕНИЯ:**\n"
-        f"`{webapp_url}`\n\n"
-        f"📋 **Как использовать:**\n"
-        f"1️⃣ Скопируй ссылку выше\n"
-        f"2️⃣ Отправь её друзьям\n"
-        f"3️⃣ Они нажимают на ссылку → присоединяются к игре\n\n"
-        f"👥 **Сейчас в игре:** {len(games[chat_id]['players'])} игроков\n"
-        f"👑 **Ведущий:** {games[chat_id]['host_name']}",
-        parse_mode="Markdown"
-    )
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🔫 Открыть игру",
+            text="🔫 Присоединиться к игре",
             web_app=WebAppInfo(url=webapp_url)
         )]
     ])
     
     await message.answer(
-        "📱 Или нажми кнопку, чтобы открыть игру:",
+        f"🎮 **ПРИГЛАШЕНИЕ В КАФЕ ОАЗИС**\n\n"
+        f"👑 Ведущий: {games[chat_id]['host_name']}\n"
+        f"👥 Игроков: {len(games[chat_id]['players'])} из 4-6\n\n"
+        f"🔫 **Как присоединиться:**\n"
+        f"• Нажми кнопку «Присоединиться к игре»\n"
+        f"• Или перешли это сообщение друзьям\n\n"
+        f"📊 Свободных мест: {6 - len(games[chat_id]['players'])}",
+        parse_mode="Markdown",
         reply_markup=keyboard
     )
 
 @dp.message(Command("invite"))
 async def cmd_invite(message: types.Message):
-    """Алиас для /link"""
+    """Пригласить друзей в игру (алиас /link)"""
     chat_id = str(message.chat.id)
     
     if chat_id not in games:
@@ -949,27 +944,22 @@ async def cmd_invite(message: types.Message):
     game_id = games[chat_id]['game_id']
     webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
     
-    await message.answer(
-        f"🔗 **ССЫЛКА ДЛЯ ПРИГЛАШЕНИЯ:**\n"
-        f"`{webapp_url}`\n\n"
-        f"📋 **Как использовать:**\n"
-        f"1️⃣ Скопируй ссылку выше\n"
-        f"2️⃣ Отправь её друзьям\n"
-        f"3️⃣ Они нажимают на ссылку → присоединяются к игре\n\n"
-        f"👥 **Сейчас в игре:** {len(games[chat_id]['players'])} игроков\n"
-        f"👑 **Ведущий:** {games[chat_id]['host_name']}",
-        parse_mode="Markdown"
-    )
-    
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🔫 Открыть игру",
+            text="🔫 Присоединиться к игре",
             web_app=WebAppInfo(url=webapp_url)
         )]
     ])
     
     await message.answer(
-        "📱 Или нажми кнопку, чтобы открыть игру:",
+        f"🎮 **ПРИГЛАШЕНИЕ В КАФЕ ОАЗИС**\n\n"
+        f"👑 Ведущий: {games[chat_id]['host_name']}\n"
+        f"👥 Игроков: {len(games[chat_id]['players'])} из 4-6\n\n"
+        f"🔫 **Как присоединиться:**\n"
+        f"• Нажми кнопку «Присоединиться к игре»\n"
+        f"• Или перешли это сообщение друзьям\n\n"
+        f"📊 Свободных мест: {6 - len(games[chat_id]['players'])}",
+        parse_mode="Markdown",
         reply_markup=keyboard
     )
 
