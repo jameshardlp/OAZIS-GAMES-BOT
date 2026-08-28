@@ -1240,7 +1240,7 @@ async def main():
     
     app.router.add_get('/health', health_check)
     
-    port = int(os.getenv('PORT', 8080))
+    port = int(os.getenv('PORT', 8082))
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host='0.0.0.0', port=port)
