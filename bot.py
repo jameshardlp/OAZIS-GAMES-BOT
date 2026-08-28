@@ -59,7 +59,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (УПРОЩЁННАЯ, С ГАРАНТИРОВАННОЙ ОТЛАДКОЙ)
+# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С ОТЛАДКОЙ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -77,7 +77,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
         </div>
         
         <!-- ОТЛАДОЧНАЯ ПАНЕЛЬ -->
-        <div id="debug-panel" style="background:#1a0a00;border:2px solid #ff6b35;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.8rem;font-family:monospace;min-height:100px;max-height:200px;overflow-y:auto;">
+        <div id="debug-panel" style="background:#1a0a00;border:2px solid #ff6b35;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.7rem;font-family:monospace;min-height:120px;max-height:200px;overflow-y:auto;">
             <div style="color:#ff6b35;font-weight:bold;">📡 ОТЛАДКА:</div>
             <div id="debug-log" style="color:#f5e6d3;white-space:pre-wrap;word-break:break-all;"></div>
         </div>
@@ -110,8 +110,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
         // ============================================
-        // ПРОСТОЙ JS ДЛЯ ОТЛАДКИ
+        // ПОЛНАЯ ЛОГИКА С ОТЛАДКОЙ
         // ============================================
+        
+        const API_BASE = '{WEBAPP_URL}';
         
         // Функция для вывода в отладку
         function debugLog(message) {{
@@ -124,49 +126,513 @@ HTML_PAGE = f'''<!DOCTYPE html>
             console.log(message);
         }}
         
-        // Сразу пишем, что скрипт загружен
-        debugLog('✅ JS скрипт загружен!');
-        debugLog('📍 URL: ' + window.location.href);
-        
-        // Проверяем Telegram WebApp
-        if (typeof window.Telegram !== 'undefined' && window.Telegram.WebApp) {{
-            debugLog('✅ Telegram WebApp найден!');
-        }} else {{
-            debugLog('❌ Telegram WebApp НЕ НАЙДЕН!');
-        }}
-        
-        // Основной код
+        // Состояние игры
+        const gameState = {{
+            playerId: null,
+            gameId: null,
+            players: [],
+            myCards: [],
+            revealedCards: [],
+            currentRound: 0,
+            maxRounds: 5,
+            status: 'lobby',
+            isHost: false,
+        }};
+
+        // ИНИЦИАЛИЗАЦИЯ
         document.addEventListener('DOMContentLoaded', function() {{
+            debugLog('✅ JS скрипт загружен!');
+            debugLog('📍 URL: ' + window.location.href);
+            
+            const tg = window.Telegram.WebApp;
+            tg.expand();
+            tg.enableClosingConfirmation();
+            
+            if (typeof window.Telegram !== 'undefined' && window.Telegram.WebApp) {{
+                debugLog('✅ Telegram WebApp найден!');
+            }} else {{
+                debugLog('❌ Telegram WebApp НЕ НАЙДЕН!');
+                return;
+            }}
+            
             debugLog('🚀 DOM загружен!');
             
-            var initData = window.Telegram?.WebApp?.initDataUnsafe;
+            const initData = window.Telegram.WebApp.initDataUnsafe;
             if (initData && initData.user) {{
-                debugLog('👤 Игрок: ' + initData.user.first_name + ' (ID: ' + initData.user.id + ')');
+                gameState.playerId = initData.user.id;
+                const userName = initData.user.first_name || 'Игрок';
+                debugLog('👤 Игрок: ' + userName + ' (ID: ' + gameState.playerId + ')');
             }} else {{
                 debugLog('⚠️ Нет данных пользователя');
             }}
             
-            var urlParams = new URLSearchParams(window.location.search);
-            var gameId = urlParams.get('game_id');
-            if (gameId) {{
-                debugLog('🎮 Game ID: ' + gameId);
+            const urlParams = new URLSearchParams(window.location.search);
+            gameState.gameId = urlParams.get('game_id');
+            if (gameState.gameId) {{
+                debugLog('🎮 Game ID: ' + gameState.gameId);
             }} else {{
                 debugLog('❌ Нет Game ID!');
+                return;
             }}
             
+            // Подключаемся к игре
+            connectToGame();
+            
             // Кнопка "Начать игру"
-            var startBtn = document.getElementById('start-game');
+            const startBtn = document.getElementById('start-game');
             if (startBtn) {{
                 debugLog('✅ Кнопка "Начать" найдена');
                 startBtn.addEventListener('click', function() {{
                     debugLog('🔄 НАЖАТА КНОПКА "НАЧАТЬ"!');
+                    startGame();
                 }});
             }} else {{
                 debugLog('❌ Кнопка "Начать" НЕ найдена!');
             }}
             
+            const revealBtn = document.getElementById('reveal-card');
+            if (revealBtn) {{
+                revealBtn.addEventListener('click', revealCard);
+            }}
+            
+            const voteBtn = document.getElementById('vote-btn');
+            if (voteBtn) {{
+                voteBtn.addEventListener('click', submitVote);
+            }}
+            
             debugLog('✅ Инициализация завершена');
         }});
+
+        // ПОДКЛЮЧЕНИЕ К ИГРЕ
+        async function connectToGame() {{
+            debugLog('🔄 Подключение к API...');
+            try {{
+                const url = API_BASE + '/api/game/state';
+                debugLog('📍 URL: ' + url);
+                
+                const response = await fetch(url, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        player_id: gameState.playerId,
+                        game_id: gameState.gameId,
+                    }})
+                }});
+                
+                debugLog('📡 Статус: ' + response.status);
+                
+                if (!response.ok) {{
+                    throw new Error('HTTP ' + response.status);
+                }}
+                
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data).substring(0, 300));
+                
+                if (data.status === 'success') {{
+                    gameState.players = data.players || [];
+                    gameState.status = data.status || 'lobby';
+                    gameState.isHost = data.is_host || false;
+                    debugLog('👑 isHost: ' + gameState.isHost);
+                    debugLog('👥 Игроков: ' + gameState.players.length);
+                    
+                    const playerExists = gameState.players.some(p => String(p.id) === String(gameState.playerId));
+                    debugLog('👤 В игре? ' + playerExists);
+                    
+                    if (!playerExists && gameState.status === 'waiting') {{
+                        debugLog('🔄 Присоединяемся...');
+                        await joinGame();
+                    }}
+                    
+                    updateUI();
+                    
+                    if (gameState.status !== 'lobby') {{
+                        await getMyCards();
+                    }}
+                }} else {{
+                    debugLog('❌ Ошибка API: ' + (data.message || 'неизвестно'));
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка: ' + error.message);
+            }}
+        }}
+
+        // ПРИСОЕДИНЕНИЕ К ИГРЕ
+        async function joinGame() {{
+            try {{
+                const initData = window.Telegram.WebApp.initDataUnsafe;
+                const user = initData?.user;
+                const userName = user?.first_name || 'Игрок';
+                const username = user?.username || '';
+                
+                debugLog('🔄 Присоединение: ' + userName);
+                
+                const response = await fetch(API_BASE + '/api/game/join', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        player_id: gameState.playerId,
+                        player_name: userName,
+                        username: username,
+                        game_id: gameState.gameId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data).substring(0, 200));
+                
+                if (data.status === 'success') {{
+                    gameState.players = data.players || [];
+                    updateUI();
+                    debugLog('✅ Присоединился: ' + userName);
+                }} else {{
+                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка присоединения: ' + error.message);
+            }}
+        }}
+
+        // НАЧАЛО ИГРЫ
+        async function startGame() {{
+            debugLog('🔄 ЗАПУСК startGame()');
+            debugLog('👑 isHost: ' + gameState.isHost);
+            debugLog('👤 playerId: ' + gameState.playerId);
+            debugLog('👥 Игроков: ' + gameState.players.length);
+            
+            if (!gameState.isHost) {{
+                debugLog('⛔ ОШИБКА: Пользователь НЕ ведущий!');
+                const tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '⛔',
+                    message: 'Только ведущий может начать игру!\\n\\nТвой ID: ' + gameState.playerId,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            if (gameState.players.length < 4) {{
+                debugLog('👥 Мало игроков: ' + gameState.players.length);
+                const tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '👥',
+                    message: 'Нужно минимум 4 игрока! Сейчас: ' + gameState.players.length,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            try {{
+                debugLog('📤 Отправка запроса на старт...');
+                const url = API_BASE + '/api/game/start';
+                const payload = {{
+                    game_id: gameState.gameId,
+                    player_id: gameState.playerId,
+                }};
+                debugLog('📤 Payload: ' + JSON.stringify(payload));
+                
+                const response = await fetch(url, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify(payload)
+                }});
+                
+                debugLog('📡 Статус: ' + response.status);
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {{
+                    debugLog('✅ Игра началась!');
+                    gameState.status = 'playing';
+                    updateUI();
+                    await getMyCards();
+                    const tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '🔥',
+                        message: 'Игра началась!',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }} else {{
+                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
+                    const tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка старта',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка сети: ' + error.message);
+                const tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+            }}
+        }}
+
+        // ПОЛУЧЕНИЕ КАРТ
+        async function getMyCards() {{
+            try {{
+                const response = await fetch(API_BASE + '/api/game/cards', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        player_id: gameState.playerId,
+                        game_id: gameState.gameId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    gameState.myCards = data.cards || [];
+                    gameState.revealedCards = data.revealed || [];
+                    renderCards();
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка получения карт: ' + error.message);
+            }}
+        }}
+
+        // ОТКРЫТИЕ КАРТЫ
+        async function revealCard() {{
+            const cardIndex = gameState.myCards.findIndex(c => !c.isRevealed);
+            
+            if (cardIndex === -1) {{
+                const tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '🃏',
+                    message: 'Все карты уже открыты!',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/reveal', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                        card_index: cardIndex,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    gameState.myCards[cardIndex].isRevealed = true;
+                    gameState.revealedCards = data.revealed_cards || [];
+                    renderCards();
+                    
+                    if (gameState.myCards.every(c => c.isRevealed)) {{
+                        setTimeout(() => startVoting(), 1500);
+                    }}
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка открытия карты: ' + error.message);
+            }}
+        }}
+
+        // ГОЛОСОВАНИЕ
+        async function startVoting() {{
+            gameState.status = 'voting';
+            updateUI();
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/voting/players', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    renderVotingList(data.players);
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка голосования: ' + error.message);
+            }}
+        }}
+
+        function renderVotingList(players) {{
+            const container = document.getElementById('voting-list');
+            container.innerHTML = '';
+            
+            players.forEach(player => {{
+                const card = document.createElement('div');
+                card.className = 'character-card voting-card';
+                card.innerHTML = `
+                    <div class="card-type">Игрок</div>
+                    <div class="card-name">${{player.name}}</div>
+                    <div class="card-effect">${{player.role || 'Без роли'}}</div>
+                    <input type="radio" name="vote" value="${{player.id}}" id="vote-${{player.id}}">
+                    <label for="vote-${{player.id}}">Голосовать</label>
+                `;
+                container.appendChild(card);
+            }});
+        }}
+
+        async function submitVote() {{
+            const selected = document.querySelector('input[name="vote"]:checked');
+            
+            if (!selected) {{
+                const tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '⚠️',
+                    message: 'Выберите игрока!',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            const targetId = parseInt(selected.value);
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/vote', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                        target_id: targetId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    document.getElementById('vote-btn').disabled = true;
+                    const tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '✅',
+                        message: 'Голос учтён!',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка отправки голоса: ' + error.message);
+            }}
+        }}
+
+        // ОБНОВЛЕНИЕ UI
+        function updateUI() {{
+            const lobby = document.getElementById('lobby');
+            const gameArea = document.getElementById('game-area');
+            const votingArea = document.getElementById('voting-area');
+            
+            if (gameState.status === 'lobby') {{
+                lobby.style.display = 'block';
+                gameArea.style.display = 'none';
+                renderPlayersList();
+            }} else if (gameState.status === 'voting') {{
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'none';
+                document.getElementById('voting-area').style.display = 'block';
+            }} else if (gameState.status === 'playing') {{
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'block';
+                document.getElementById('voting-area').style.display = 'none';
+            }}
+        }}
+
+        function renderPlayersList() {{
+            const container = document.getElementById('players-list');
+            container.innerHTML = '';
+            
+            gameState.players.forEach(player => {{
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `
+                    <span>👤 ${{player.name}}</span>
+                    ${{player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : ''}}
+                `;
+                container.appendChild(div);
+            }});
+            
+            const startBtn = document.getElementById('start-game');
+            if (gameState.players.length >= 4 && gameState.isHost) {{
+                startBtn.style.display = 'block';
+                startBtn.textContent = `🔥 Начать игру (${{gameState.players.length}} игроков)`;
+                startBtn.disabled = false;
+            }} else if (gameState.isHost) {{
+                startBtn.style.display = 'block';
+                startBtn.textContent = `👥 Нужно ещё ${{4 - gameState.players.length}} игроков`;
+                startBtn.disabled = true;
+            }} else {{
+                startBtn.style.display = 'none';
+            }}
+        }}
+
+        function renderCards() {{
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+            
+            gameState.myCards.forEach((card) => {{
+                const div = document.createElement('div');
+                div.className = 'character-card';
+                
+                if (card.isRevealed) {{
+                    div.style.borderColor = '#ff6b35';
+                    div.style.opacity = '1';
+                }} else {{
+                    div.style.borderColor = '#666';
+                    div.style.opacity = '0.7';
+                }}
+                
+                div.innerHTML = `
+                    <div class="card-type">${{card.type || 'Карта'}}</div>
+                    <div class="card-name">${{card.isRevealed ? card.name : '❓ Скрыто'}}</div>
+                    <div class="card-effect">${{card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"'}}</div>
+                    ${{card.isRevealed ? `<div class="card-rarity">⭐ ${{card.rarity || 'Обычная'}}</div>` : ''}}
+                `;
+                container.appendChild(div);
+            }});
+            
+            const remaining = gameState.myCards.filter(c => !c.isRevealed).length;
+            document.getElementById('reveal-card').textContent = 
+                `🃏 Открыть карту (осталось: ${{remaining}})`;
+        }}
+
+        // АВТООБНОВЛЕНИЕ
+        setInterval(async () => {{
+            if (gameState.status !== 'finished' && gameState.status !== 'voting') {{
+                try {{
+                    const response = await fetch(API_BASE + '/api/game/state', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{
+                            player_id: gameState.playerId,
+                            game_id: gameState.gameId,
+                        }})
+                    }});
+                    
+                    const data = await response.json();
+                    
+                    if (data.status === 'success' && data.status !== gameState.status) {{
+                        gameState.status = data.status;
+                        updateUI();
+                        
+                        if (data.status === 'voting') {{
+                            await startVoting();
+                        }}
+                    }}
+                }} catch (error) {{
+                    // Игнорируем
+                }}
+            }}
+        }}, 5000);
+
+        debugLog('✅ Mini App готов!');
+        debugLog('📡 API: ' + API_BASE);
     </script>
 </body>
 </html>'''
