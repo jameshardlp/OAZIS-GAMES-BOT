@@ -216,7 +216,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
         async function joinGame() {{
             try {{
                 const initData = tg.initDataUnsafe;
-                const userName = initData?.user?.first_name || 'Игрок';
+                const user = initData?.user;
+                const userName = user?.first_name || 'Игрок';
+                const username = user?.username || '';
                 
                 const response = await fetch(API_BASE + '/api/game/join', {{
                     method: 'POST',
@@ -224,6 +226,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
                         player_name: userName,
+                        username: username,
                         game_id: gameState.gameId,
                     }})
                 }});
@@ -706,7 +709,9 @@ async def cmd_start(message: types.Message):
         "🔫 Чтобы начать игру, используй команду /oasis\n\n"
         "📋 Команды:\n"
         "/oasis - Создать игру\n"
-        "/host @username - Назначить ведущего\n"
+        "/host - Назначить ведущего (ответь на сообщение игрока)\n"
+        "/host 123456789 - Назначить ведущего по ID\n"
+        "/host @username - Назначить ведущего по username\n"
         "/whohost - Показать ведущего\n"
         "/stop - Остановить игру (только ведущий)"
     )
@@ -754,51 +759,107 @@ async def cmd_oasis(message: types.Message):
 
 @dp.message(Command("host"))
 async def cmd_host(message: types.Message):
-    """Назначить ведущего (/host @username)"""
+    """Назначить ведущего:
+    /host - ответь на сообщение пользователя
+    /host 123456789 - по Telegram ID
+    /host @username - по username
+    """
     chat_id = str(message.chat.id)
     
+    # Проверяем, есть ли игра
     if chat_id not in games:
         await message.answer("❌ Нет активной игры. Создай игру через /oasis")
         return
     
+    # Проверяем, что команду даёт текущий ведущий
     if str(message.from_user.id) != str(games[chat_id]['host_id']):
         await message.answer("⛔ Только текущий ведущий может назначить нового!")
         return
     
-    command_parts = message.text.split()
-    if len(command_parts) < 2:
-        await message.answer("❌ Использование: /host @username")
-        return
-    
-    username = command_parts[1].replace('@', '')
-    
-    try:
-        if message.reply_to_message:
-            target_user = message.reply_to_message.from_user
-            games[chat_id]['host_id'] = str(target_user.id)
-            games[chat_id]['host_name'] = target_user.first_name or target_user.username or 'Ведущий'
-            
-            for player in games[chat_id]['players']:
-                player['is_host'] = str(player['id']) == str(target_user.id)
-            
-            await message.answer(f"👑 Ведущий передан {games[chat_id]['host_name']}")
-            return
+    # === РЕЖИМ 1: Ответ на сообщение ===
+    if message.reply_to_message:
+        target_user = message.reply_to_message.from_user
+        target_id = str(target_user.id)
+        target_name = target_user.first_name or target_user.username or f"User {target_id}"
         
-        found = False
+        # Проверяем, есть ли игрок в игре
+        player_in_game = False
         for player in games[chat_id]['players']:
-            if player.get('username') == username or player.get('name') == username:
-                games[chat_id]['host_id'] = str(player['id'])
-                games[chat_id]['host_name'] = player['name']
-                player['is_host'] = True
-                found = True
-                await message.answer(f"👑 Ведущий передан {player['name']}")
+            if str(player['id']) == target_id:
+                player_in_game = True
                 break
         
-        if not found:
-            await message.answer(f"❌ Игрок @{username} не найден в игре")
-            
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+        if not player_in_game:
+            await message.answer(f"❌ Игрок {target_name} не в игре! Он должен присоединиться через /oasis")
+            return
+        
+        # Назначаем ведущим
+        games[chat_id]['host_id'] = target_id
+        games[chat_id]['host_name'] = target_name
+        
+        # Обновляем флаг is_host у всех игроков
+        for player in games[chat_id]['players']:
+            player['is_host'] = str(player['id']) == target_id
+        
+        await message.answer(f"👑 Ведущий передан {target_name}")
+        return
+    
+    # === РЕЖИМ 2: По ID или username ===
+    command_parts = message.text.split()
+    if len(command_parts) < 2:
+        await message.answer(
+            "❌ Использование:\n"
+            "/host - ответь на сообщение игрока\n"
+            "/host 123456789 - по Telegram ID\n"
+            "/host @username - по username"
+        )
+        return
+    
+    target_input = command_parts[1].strip()
+    
+    # Пробуем найти игрока по ID (только цифры)
+    if target_input.isdigit():
+        target_id = target_input
+        found_player = None
+        for player in games[chat_id]['players']:
+            if str(player['id']) == target_id:
+                found_player = player
+                break
+        
+        if found_player:
+            games[chat_id]['host_id'] = target_id
+            games[chat_id]['host_name'] = found_player['name']
+            for player in games[chat_id]['players']:
+                player['is_host'] = str(player['id']) == target_id
+            await message.answer(f"👑 Ведущий передан {found_player['name']}")
+            return
+        else:
+            await message.answer(f"❌ Игрок с ID {target_id} не найден в игре")
+            return
+    
+    # Пробуем найти по username (с @ или без)
+    username = target_input.replace('@', '').lower()
+    found_player = None
+    for player in games[chat_id]['players']:
+        # Проверяем по имени (может совпадать с username)
+        if player.get('name', '').lower() == username:
+            found_player = player
+            break
+        # Проверяем по username, если он есть в данных
+        if player.get('username', '').lower() == username:
+            found_player = player
+            break
+    
+    if found_player:
+        target_id = str(found_player['id'])
+        games[chat_id]['host_id'] = target_id
+        games[chat_id]['host_name'] = found_player['name']
+        for player in games[chat_id]['players']:
+            player['is_host'] = str(player['id']) == target_id
+        await message.answer(f"👑 Ведущий передан {found_player['name']}")
+        return
+    
+    await message.answer(f"❌ Игрок {target_input} не найден в игре")
 
 @dp.message(Command("whohost"))
 async def cmd_whohost(message: types.Message):
@@ -952,6 +1013,7 @@ async def api_join_game(request):
         data = await request.json()
         player_id = data.get('player_id')
         player_name = data.get('player_name')
+        username = data.get('username', '')
         game_id = data.get('game_id')
         
         game = None
@@ -979,6 +1041,7 @@ async def api_join_game(request):
         player = {
             'id': str(player_id),
             'name': player_name,
+            'username': username,
             'is_host': str(game['host_id']) == str(player_id),
             'cards': [],
             'revealed': [],
@@ -1228,11 +1291,9 @@ async def main():
     
     app = web.Application()
     
-    # Статика
     app.router.add_get('/', serve_html)
     app.router.add_get('/style.css', serve_css)
     
-    # API
     app.router.add_get('/api/test', api_test)
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
@@ -1244,7 +1305,6 @@ async def main():
     
     app.router.add_get('/health', lambda r: web.Response(text="OK"))
     
-    # Запуск
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host='0.0.0.0', port=PORT)
