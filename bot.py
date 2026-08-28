@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
-# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ (БЕЗ ПРОБЛЕМНЫХ СТРОК!)
+# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ
 # ============================================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -299,6 +299,7 @@ async function connectToGame() {
             gameState.players = data.players || [];
             gameState.status = data.status || 'lobby';
             gameState.isHost = data.is_host || false;
+            console.log('👑 isHost:', gameState.isHost);
             
             const playerExists = gameState.players.some(p => p.id === gameState.playerId);
             if (!playerExists && gameState.status === 'waiting') {
@@ -694,7 +695,12 @@ async def cmd_start(message: types.Message):
     await message.answer(
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "Игра на выживание во время зомби-апокалипсиса.\n"
-        "🔫 Чтобы начать игру, используй команду /oasis"
+        "🔫 Чтобы начать игру, используй команду /oasis\n\n"
+        "📋 Команды:\n"
+        "/oasis - Создать игру\n"
+        "/host @username - Назначить ведущего\n"
+        "/whohost - Показать ведущего\n"
+        "/stop - Остановить игру (только ведущий)"
     )
 
 @dp.message(Command("oasis"))
@@ -702,7 +708,7 @@ async def cmd_oasis(message: types.Message):
     chat_id = str(message.chat.id)
     
     if chat_id in games:
-        await message.answer("⚠️ Игра уже идёт!")
+        await message.answer("⚠️ Игра уже идёт! Используй /stop чтобы остановить.")
         return
     
     game_id = str(uuid.uuid4())[:8]
@@ -713,7 +719,8 @@ async def cmd_oasis(message: types.Message):
         'status': 'waiting',
         'round': 0,
         'max_rounds': 5,
-        'host_id': message.from_user.id,
+        'host_id': str(message.from_user.id),
+        'host_name': message.from_user.first_name or message.from_user.username or 'Ведущий',
         'created_at': datetime.now().isoformat(),
         'votes': {},
         'eliminated': [],
@@ -729,12 +736,113 @@ async def cmd_oasis(message: types.Message):
     ])
     
     await message.answer(
-        "🧟 ЗОМБИ-АПОКАЛИПСИС!\n\n"
-        "Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
-        "Мест хватит только на половину из вас.\n\n"
-        "👥 Соберите от 4 до 6 игроков и нажмите кнопку.",
+        f"🧟 ЗОМБИ-АПОКАЛИПСИС!\n\n"
+        f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
+        f"Мест хватит только на половину из вас.\n\n"
+        f"👑 Ведущий: {games[chat_id]['host_name']}\n"
+        f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.",
         reply_markup=keyboard
     )
+
+@dp.message(Command("host"))
+async def cmd_host(message: types.Message):
+    """Назначить ведущего (/host @username)"""
+    chat_id = str(message.chat.id)
+    
+    # Проверяем, есть ли игра
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
+        return
+    
+    # Проверяем, что команду даёт текущий ведущий
+    if str(message.from_user.id) != str(games[chat_id]['host_id']):
+        await message.answer("⛔ Только текущий ведущий может назначить нового!")
+        return
+    
+    # Получаем username из команды
+    command_parts = message.text.split()
+    if len(command_parts) < 2:
+        await message.answer("❌ Использование: /host @username")
+        return
+    
+    username = command_parts[1].replace('@', '')
+    
+    # Ищем пользователя в чате по username
+    try:
+        # Пробуем найти через упоминание
+        if message.reply_to_message:
+            target_user = message.reply_to_message.from_user
+            games[chat_id]['host_id'] = str(target_user.id)
+            games[chat_id]['host_name'] = target_user.first_name or target_user.username or 'Ведущий'
+            
+            # Обновляем is_host у игроков
+            for player in games[chat_id]['players']:
+                player['is_host'] = str(player['id']) == str(target_user.id)
+            
+            await message.answer(f"👑 Ведущий передан {games[chat_id]['host_name']}")
+            return
+        
+        # Если не ответил на сообщение, ищем по username в списке игроков
+        found = False
+        for player in games[chat_id]['players']:
+            # Проверяем, есть ли такой username в списке игроков
+            if player.get('username') == username or player.get('name') == username:
+                games[chat_id]['host_id'] = str(player['id'])
+                games[chat_id]['host_name'] = player['name']
+                player['is_host'] = True
+                found = True
+                await message.answer(f"👑 Ведущий передан {player['name']}")
+                break
+        
+        if not found:
+            await message.answer(f"❌ Игрок @{username} не найден в игре")
+            
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
+
+@dp.message(Command("whohost"))
+async def cmd_whohost(message: types.Message):
+    """Показать ведущего"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры")
+        return
+    
+    host_name = games[chat_id].get('host_name', 'Неизвестно')
+    host_id = games[chat_id].get('host_id', 'Нет ID')
+    
+    # Проверяем, есть ли ведущий в списке игроков
+    host_in_game = False
+    for player in games[chat_id]['players']:
+        if str(player['id']) == str(host_id):
+            host_in_game = True
+            host_name = player['name']
+            break
+    
+    await message.answer(
+        f"👑 Текущий ведущий:\n"
+        f"Имя: {host_name}\n"
+        f"Статус: {'✅ В игре' if host_in_game else '❌ Не в игре'}"
+    )
+
+@dp.message(Command("stop"))
+async def cmd_stop_game(message: types.Message):
+    """Остановить игру (только ведущий)"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры")
+        return
+    
+    # Проверяем, что команду даёт ведущий
+    if str(message.from_user.id) != str(games[chat_id]['host_id']):
+        await message.answer("⛔ Только ведущий может остановить игру!")
+        return
+    
+    # Удаляем игру
+    del games[chat_id]
+    await message.answer("⛔ Игра остановлена ведущим!")
 
 @dp.callback_query(lambda c: c.data == "rules")
 async def show_rules(callback: types.CallbackQuery):
@@ -749,15 +857,6 @@ async def show_rules(callback: types.CallbackQuery):
         "6️⃣ Побеждают те, кто остался в живых\n\n"
         "🎯 Главное - харизма и убеждение!"
     )
-
-@dp.message(Command("stop"))
-async def cmd_stop(message: types.Message):
-    chat_id = str(message.chat.id)
-    if chat_id in games:
-        del games[chat_id]
-        await message.answer("⛔ Игра остановлена.")
-    else:
-        await message.answer("❌ Активной игры нет.")
 
 # ============================================
 # 10. ГЕНЕРАЦИЯ КАРТ
@@ -835,7 +934,7 @@ async def api_get_state(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if p['id'] == player_id), None)
+        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         
         return web.json_response({
             'status': 'success',
@@ -844,7 +943,7 @@ async def api_get_state(request):
             'players': game['players'],
             'round': game['round'],
             'max_rounds': game['max_rounds'],
-            'is_host': game['host_id'] == player_id if player else False,
+            'is_host': str(game['host_id']) == str(player_id) if player else False,
         })
     except Exception as e:
         print(f"❌ Ошибка: {e}")
@@ -873,10 +972,18 @@ async def api_join_game(request):
         if len(game['players']) >= 6:
             return web.json_response({'status': 'error', 'message': 'Игра заполнена'}, status=400)
         
+        # Проверяем, не присоединился ли уже игрок
+        if any(str(p['id']) == str(player_id) for p in game['players']):
+            return web.json_response({
+                'status': 'success',
+                'message': 'Игрок уже в игре',
+                'players': game['players'],
+            })
+        
         player = {
-            'id': player_id,
+            'id': str(player_id),
             'name': player_name,
-            'is_host': game['host_id'] == player_id,
+            'is_host': str(game['host_id']) == str(player_id),
             'cards': [],
             'revealed': [],
         }
@@ -906,8 +1013,10 @@ async def api_start_game(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        if game['host_id'] != player_id:
-            return web.json_response({'status': 'error', 'message': 'Только ведущий'}, status=403)
+        # Сравниваем как строки!
+        if str(game['host_id']) != str(player_id):
+            print(f"❌ Ошибка: игрок {player_id} не ведущий (хост: {game['host_id']})")
+            return web.json_response({'status': 'error', 'message': 'Только ведущий может начать игру'}, status=403)
         
         if len(game['players']) < 4:
             return web.json_response({'status': 'error', 'message': 'Нужно минимум 4 игрока'}, status=400)
@@ -944,7 +1053,7 @@ async def api_get_cards(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if p['id'] == player_id), None)
+        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
@@ -973,7 +1082,7 @@ async def api_reveal_card(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if p['id'] == player_id), None)
+        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
@@ -1024,12 +1133,12 @@ async def api_get_voting_players(request):
         
         players_for_vote = [
             {
-                'id': p['id'],
+                'id': str(p['id']),
                 'name': p['name'],
                 'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
-            if p['id'] != player_id
+            if str(p['id']) != str(player_id)
         ]
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
@@ -1053,7 +1162,7 @@ async def api_submit_vote(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game['votes'][player_id] = target_id
+        game['votes'][str(player_id)] = str(target_id)
         
         all_voted = len(game['votes']) == len(game['players'])
         
@@ -1063,12 +1172,12 @@ async def api_submit_vote(request):
                 vote_results[target] = vote_results.get(target, 0) + 1
             
             max_votes = max(vote_results.values())
-            eliminated = [p for p in game['players'] if p['id'] in vote_results and vote_results[p['id']] == max_votes]
+            eliminated = [p for p in game['players'] if str(p['id']) in vote_results and vote_results[str(p['id'])] == max_votes]
             
             if eliminated:
                 eliminated_player = eliminated[0]
                 game['eliminated'].append(eliminated_player)
-                game['players'] = [p for p in game['players'] if p['id'] != eliminated_player['id']]
+                game['players'] = [p for p in game['players'] if str(p['id']) != str(eliminated_player['id'])]
                 
                 await bot.send_message(
                     game['chat_id'],
@@ -1082,6 +1191,8 @@ async def api_submit_vote(request):
                     game['chat_id'],
                     f"🏆 ВЫЖИВШИЕ!\n\n{', '.join(survivors)} заперлись в кафе.\nЗомби не прошли! 🎉"
                 )
+                # Удаляем игру после завершения
+                # del games[game['chat_id']]
             else:
                 game['round'] += 1
                 game['status'] = 'playing'
@@ -1132,7 +1243,7 @@ async def main():
     app.router.add_get('/style.css', serve_css)
     app.router.add_get('/app.js', serve_js)
     
-    # API (ВСЕ ЭНДПОИНТЫ ЗДЕСЬ!)
+    # API
     app.router.add_get('/api/test', api_test)
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
