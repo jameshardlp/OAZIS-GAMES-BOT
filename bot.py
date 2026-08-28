@@ -59,7 +59,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ)
+# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -115,7 +115,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
         
         const API_BASE = '{WEBAPP_URL}';
         
-        // Функция для вывода в отладку
         function debugLog(message) {{
             var logEl = document.getElementById('debug-log');
             if (logEl) {{
@@ -126,7 +125,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             console.log(message);
         }}
         
-        // Состояние игры
         const gameState = {{
             playerId: null,
             gameId: null,
@@ -139,7 +137,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             isHost: false,
         }};
 
-        // ИНИЦИАЛИЗАЦИЯ
         document.addEventListener('DOMContentLoaded', function() {{
             debugLog('✅ JS скрипт загружен!');
             
@@ -174,10 +171,8 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 return;
             }}
             
-            // Подключаемся к игре (с автоматическим присоединением)
             connectToGame();
             
-            // Кнопка "Начать игру"
             const startBtn = document.getElementById('start-game');
             if (startBtn) {{
                 debugLog('✅ Кнопка "Начать" найдена');
@@ -202,7 +197,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             debugLog('✅ Инициализация завершена');
         }});
 
-        // ПОДКЛЮЧЕНИЕ К ИГРЕ (С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ)
         async function connectToGame() {{
             debugLog('🔄 Подключение к API...');
             try {{
@@ -231,17 +225,18 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'lobby';
                     gameState.isHost = data.is_host || false;
-                    debugLog('👑 isHost: ' + gameState.isHost);
+                    debugLog('👑 isHost (из ответа): ' + gameState.isHost);
                     debugLog('👥 Игроков: ' + gameState.players.length);
                     
                     const playerExists = gameState.players.some(p => String(p.id) === String(gameState.playerId));
                     debugLog('👤 В игре? ' + playerExists);
                     
-                    // АВТОМАТИЧЕСКОЕ ПРИСОЕДИНЕНИЕ: если игрок не в игре, присоединяем
+                    // ★★★ АВТОМАТИЧЕСКОЕ ПРИСОЕДИНЕНИЕ ★★★
                     if (!playerExists) {{
-                        debugLog('🔄 Игрок не в игре! Автоматическое присоединение...');
+                        debugLog('🔄 Игрок не в игре! Присоединяемся...');
                         await joinGame();
-                        // Обновляем состояние после присоединения
+                        
+                        debugLog('🔄 Обновление состояния после присоединения...');
                         const updatedResponse = await fetch(url, {{
                             method: 'POST',
                             headers: {{'Content-Type': 'application/json'}},
@@ -256,6 +251,24 @@ HTML_PAGE = f'''<!DOCTYPE html>
                             gameState.isHost = updatedData.is_host || false;
                             debugLog('👑 Обновлённый isHost: ' + gameState.isHost);
                             debugLog('👥 Обновлённое количество игроков: ' + gameState.players.length);
+                        }}
+                    }} else {{
+                        debugLog('✅ Игрок уже в игре');
+                        if (!gameState.isHost) {{
+                            debugLog('⚠️ Игрок в игре, но не ведущий.');
+                            const hostCheck = await fetch(url, {{
+                                method: 'POST',
+                                headers: {{'Content-Type': 'application/json'}},
+                                body: JSON.stringify({{
+                                    player_id: gameState.playerId,
+                                    game_id: gameState.gameId,
+                                }})
+                            }});
+                            const hostData = await hostCheck.json();
+                            if (hostData.status === 'success') {{
+                                gameState.isHost = hostData.is_host || false;
+                                debugLog('👑 Повторная проверка isHost: ' + gameState.isHost);
+                            }}
                         }}
                     }}
                     
@@ -272,7 +285,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // ПРИСОЕДИНЕНИЕ К ИГРЕ
         async function joinGame() {{
             try {{
                 const initData = window.Telegram.WebApp.initDataUnsafe;
@@ -314,7 +326,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // НАЧАЛО ИГРЫ
         async function startGame() {{
             debugLog('🔄 ЗАПУСК startGame()');
             debugLog('👑 isHost: ' + gameState.isHost);
@@ -326,7 +337,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 const tg = window.Telegram.WebApp;
                 tg.showPopup({{
                     title: '⛔',
-                    message: 'Только ведущий может начать игру!\\n\\nТвой ID: ' + gameState.playerId,
+                    message: 'Только ведущий может начать игру!\\n\\nТвой ID: ' + gameState.playerId + '\\n\\nПроверь /whohost в чате',
                     buttons: [{{text: 'OK', type: 'default'}}]
                 }});
                 return;
@@ -393,7 +404,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // ПОЛУЧЕНИЕ КАРТ
         async function getMyCards() {{
             try {{
                 const response = await fetch(API_BASE + '/api/game/cards', {{
@@ -417,7 +427,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // ОТКРЫТИЕ КАРТЫ
         async function revealCard() {{
             const cardIndex = gameState.myCards.findIndex(c => !c.isRevealed);
             
@@ -458,7 +467,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // ГОЛОСОВАНИЕ
         async function startVoting() {{
             gameState.status = 'voting';
             updateUI();
@@ -543,7 +551,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
-        // ОБНОВЛЕНИЕ UI
         function updateUI() {{
             const lobby = document.getElementById('lobby');
             const gameArea = document.getElementById('game-area');
@@ -624,7 +631,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 `🃏 Открыть карту (осталось: ${{remaining}})`;
         }}
 
-        // АВТООБНОВЛЕНИЕ
         setInterval(async () => {{
             if (gameState.status !== 'finished' && gameState.status !== 'voting') {{
                 try {{
