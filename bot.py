@@ -64,7 +64,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА
+# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С АВТОПРИСОЕДИНЕНИЕМ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -839,53 +839,36 @@ def load_cards():
     print("✅ Используются дефолтные карты")
 
 # ============================================
-# 8. КОМАНДЫ БОТА (С ПОДДЕРЖКОЙ ГРУПП)
+# 8. КОМАНДЫ БОТА
 # ============================================
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
-    chat_type = message.chat.type
-    if chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        await message.answer(
-            "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
-            "Это игра на выживание во время зомби-апокалипсиса.\n\n"
-            "🔫 Чтобы начать игру, используй команду /oasis\n\n"
-            "📋 **Команды:**\n"
-            "/oasis - Создать игру\n"
-            "/link - Пригласить друзей (кнопка для присоединения)\n"
-            "/invite - То же самое, что и /link\n"
-            "/host - Назначить ведущего (ответь на сообщение игрока)\n"
-            "/host 123456789 - Назначить ведущего по ID\n"
-            "/host @username - Назначить ведущего по username\n"
-            "/whohost - Показать ведущего\n"
-            "/stop - Остановить игру (только ведущий)\n"
-            "/rules - Показать правила игры",
-            parse_mode="Markdown"
-        )
-    else:
-        await message.answer(
-            "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
-            "Игра на выживание во время зомби-апокалипсиса.\n"
-            "🔫 Чтобы начать игру, используй команду /oasis\n\n"
-            "📋 **Команды:**\n"
-            "/oasis - Создать игру\n"
-            "/link - Пригласить друзей (кнопка для присоединения)\n"
-            "/invite - То же самое, что и /link\n"
-            "/host - Назначить ведущего (ответь на сообщение игрока)\n"
-            "/host 123456789 - Назначить ведущего по ID\n"
-            "/host @username - Назначить ведущего по username\n"
-            "/whohost - Показать ведущего\n"
-            "/stop - Остановить игру (только ведущий)\n"
-            "/rules - Показать правила игры",
-            parse_mode="Markdown"
-        )
+    await message.answer(
+        "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
+        "Игра на выживание во время зомби-апокалипсиса.\n"
+        "🔫 Чтобы начать игру, используй команду /oasis\n\n"
+        "📋 **Команды:**\n"
+        "/oasis - Создать игру (автоматически очищает старую)\n"
+        "/status - Показать статус игры\n"
+        "/link - Пригласить друзей (кнопка для присоединения)\n"
+        "/invite - То же самое, что и /link\n"
+        "/host - Назначить ведущего (ответь на сообщение игрока)\n"
+        "/host 123456789 - Назначить ведущего по ID\n"
+        "/host @username - Назначить ведущего по username\n"
+        "/whohost - Показать ведущего\n"
+        "/stop - Остановить игру (только ведущий)\n"
+        "/rules - Показать правила игры",
+        parse_mode="Markdown"
+    )
 
 @dp.message(Command("oasis"))
 async def cmd_oasis(message: types.Message):
     chat_id = str(message.chat.id)
     
+    # Если есть игра — удаляем её
     if chat_id in games:
-        await message.answer("⚠️ Игра уже идёт! Используй /stop чтобы остановить.")
-        return
+        await message.answer("⚠️ Останавливаю старую игру и создаю новую...")
+        del games[chat_id]
     
     game_id = str(uuid.uuid4())[:8]
     games[chat_id] = {
@@ -903,12 +886,13 @@ async def cmd_oasis(message: types.Message):
     }
     
     webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
+    
+    # Исправлено: разделяем кнопки на два ряда
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🔫 Присоединиться к игре",
             web_app=WebAppInfo(url=webapp_url)
-        )],
-        [InlineKeyboardButton(text="📖 Правила игры", callback_data="rules")]
+        )]
     ])
     
     chat_type = message.chat.type
@@ -934,6 +918,36 @@ async def cmd_oasis(message: types.Message):
             parse_mode="Markdown",
             reply_markup=keyboard
         )
+    
+    # Отдельное сообщение с кнопкой "Правила"
+    rules_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 Правила игры", callback_data="rules")]
+    ])
+    
+    await message.answer(
+        "📖 Нажми кнопку, чтобы узнать правила:",
+        reply_markup=rules_keyboard
+    )
+
+@dp.message(Command("status"))
+async def cmd_status(message: types.Message):
+    """Показать статус игры"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
+        return
+    
+    game = games[chat_id]
+    await message.answer(
+        f"📊 **Статус игры:**\n"
+        f"🎮 Game ID: `{game['game_id']}`\n"
+        f"👑 Ведущий: {game['host_name']}\n"
+        f"👥 Игроков: {len(game['players'])} из 4-6\n"
+        f"📝 Статус: {game['status']}\n"
+        f"📊 Раунд: {game['round']} из {game['max_rounds']}",
+        parse_mode="Markdown"
+    )
 
 @dp.message(Command("link"))
 async def cmd_link(message: types.Message):
