@@ -59,7 +59,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (ПОЛНАЯ ВЕРСИЯ С ОТЛАДКОЙ)
+# 5. HTML СТРАНИЦА (С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -110,7 +110,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
         // ============================================
-        // ПОЛНАЯ ЛОГИКА С ОТЛАДКОЙ
+        // ПОЛНАЯ ЛОГИКА С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ
         // ============================================
         
         const API_BASE = '{WEBAPP_URL}';
@@ -142,7 +142,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
         // ИНИЦИАЛИЗАЦИЯ
         document.addEventListener('DOMContentLoaded', function() {{
             debugLog('✅ JS скрипт загружен!');
-            debugLog('📍 URL: ' + window.location.href);
             
             const tg = window.Telegram.WebApp;
             tg.expand();
@@ -175,7 +174,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 return;
             }}
             
-            // Подключаемся к игре
+            // Подключаемся к игре (с автоматическим присоединением)
             connectToGame();
             
             // Кнопка "Начать игру"
@@ -203,7 +202,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             debugLog('✅ Инициализация завершена');
         }});
 
-        // ПОДКЛЮЧЕНИЕ К ИГРЕ
+        // ПОДКЛЮЧЕНИЕ К ИГРЕ (С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ)
         async function connectToGame() {{
             debugLog('🔄 Подключение к API...');
             try {{
@@ -238,9 +237,26 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     const playerExists = gameState.players.some(p => String(p.id) === String(gameState.playerId));
                     debugLog('👤 В игре? ' + playerExists);
                     
-                    if (!playerExists && gameState.status === 'waiting') {{
-                        debugLog('🔄 Присоединяемся...');
+                    // АВТОМАТИЧЕСКОЕ ПРИСОЕДИНЕНИЕ: если игрок не в игре, присоединяем
+                    if (!playerExists) {{
+                        debugLog('🔄 Игрок не в игре! Автоматическое присоединение...');
                         await joinGame();
+                        // Обновляем состояние после присоединения
+                        const updatedResponse = await fetch(url, {{
+                            method: 'POST',
+                            headers: {{'Content-Type': 'application/json'}},
+                            body: JSON.stringify({{
+                                player_id: gameState.playerId,
+                                game_id: gameState.gameId,
+                            }})
+                        }});
+                        const updatedData = await updatedResponse.json();
+                        if (updatedData.status === 'success') {{
+                            gameState.players = updatedData.players || [];
+                            gameState.isHost = updatedData.is_host || false;
+                            debugLog('👑 Обновлённый isHost: ' + gameState.isHost);
+                            debugLog('👥 Обновлённое количество игроков: ' + gameState.players.length);
+                        }}
                     }}
                     
                     updateUI();
@@ -284,8 +300,14 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     gameState.players = data.players || [];
                     updateUI();
                     debugLog('✅ Присоединился: ' + userName);
+                    const tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '✅ Присоединились!',
+                        message: 'Добро пожаловать, ' + userName + '!',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
                 }} else {{
-                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
+                    debugLog('❌ Ошибка присоединения: ' + (data.message || 'неизвестно'));
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка присоединения: ' + error.message);
