@@ -40,10 +40,6 @@ PORT = int(os.getenv("PORT", 8082))
 
 if not BOT_TOKEN:
     print("❌ ОШИБКА: BOT_TOKEN не найден в .env файле!")
-    print("📝 Создай файл .env с содержимым:")
-    print("   BOT_TOKEN=твой_токен_от_BotFather")
-    print("   WEBAPP_URL=https://твой_домен.bothost.tech")
-    print("   PORT=8082")
     sys.exit(1)
 
 if not WEBAPP_URL:
@@ -63,7 +59,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (С ИСПРАВЛЕННЫМ JS)
+# 5. HTML СТРАНИЦА (С ВИЗУАЛЬНОЙ ОТЛАДКОЙ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -79,13 +75,18 @@ HTML_PAGE = f'''<!DOCTYPE html>
             <h1 class="neon-text">ОАЗИС</h1>
             <p class="neon-sub">Зомби-убежище • Техас 1999</p>
         </div>
+        
+        <!-- ОТЛАДОЧНАЯ ПАНЕЛЬ -->
+        <div id="debug-panel" style="background:#1a0a00;border:1px solid #ff6b35;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.8rem;font-family:monospace;max-height:120px;overflow-y:auto;">
+            <div style="color:#ff6b35;font-weight:bold;">📡 ОТЛАДКА:</div>
+            <div id="debug-log" style="color:#f5e6d3;white-space:pre-wrap;word-break:break-all;"></div>
+        </div>
+        
         <div id="game-container">
             <div id="lobby">
                 <h2>👥 Лобби</h2>
                 <div id="players-list"></div>
                 <button id="start-game" class="btn-neon">🔥 Начать игру</button>
-                <p id="debug-info" style="font-size:0.8rem;opacity:0.5;margin-top:10px;"></p>
-                <p id="error-info" style="font-size:0.8rem;color:#ff6b35;margin-top:10px;"></p>
             </div>
             <div id="game-area" style="display:none;">
                 <div id="character-cards">
@@ -107,492 +108,518 @@ HTML_PAGE = f'''<!DOCTYPE html>
     </div>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        (function() {{
-            'use strict';
-            
-            // Используем полный URL для API
-            const API_BASE = '{WEBAPP_URL}';
-            console.log('📍 API_BASE:', API_BASE);
-            
-            const tg = window.Telegram.WebApp;
-            tg.expand();
-            tg.enableClosingConfirmation();
+        // ============================================
+        // КАФЕ ОАЗИС - Mini App
+        // ============================================
+        
+        const API_BASE = '{WEBAPP_URL}';
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.enableClosingConfirmation();
 
-            const gameState = {{
-                playerId: null,
-                gameId: null,
-                players: [],
-                myCards: [],
-                revealedCards: [],
-                currentRound: 0,
-                maxRounds: 5,
-                status: 'lobby',
-                isHost: false,
-            }};
-
-            function showError(message) {{
-                const errorEl = document.getElementById('error-info');
-                if (errorEl) {{
-                    errorEl.textContent = '❌ ' + message;
-                    errorEl.style.color = '#ff6b35';
-                }}
-                console.error('❌', message);
+        // ФУНКЦИЯ ДЛЯ ВЫВОДА В ОТЛАДОЧНУЮ ПАНЕЛЬ
+        function debugLog(message) {{
+            const logEl = document.getElementById('debug-log');
+            if (logEl) {{
+                const timestamp = new Date().toLocaleTimeString();
+                logEl.innerHTML += `[${{timestamp}}] ${{message}}\n`;
+                logEl.scrollTop = logEl.scrollHeight;
             }}
+            console.log(message);
+        }}
 
-            function showDebug(message) {{
-                const debugEl = document.getElementById('debug-info');
-                if (debugEl) {{
-                    debugEl.textContent = message;
-                }}
-                console.log('🔍', message);
+        // ПЕРЕМЕННЫЕ СОСТОЯНИЯ
+        const gameState = {{
+            playerId: null,
+            gameId: null,
+            players: [],
+            myCards: [],
+            revealedCards: [],
+            currentRound: 0,
+            maxRounds: 5,
+            status: 'lobby',
+            isHost: false,
+        }};
+
+        // ИНИЦИАЛИЗАЦИЯ
+        document.addEventListener('DOMContentLoaded', function() {{
+            debugLog('🚀 Mini App загружен!');
+            debugLog('📡 API: ' + API_BASE);
+            
+            const initData = tg.initDataUnsafe;
+            if (initData && initData.user) {{
+                gameState.playerId = initData.user.id;
+                const userName = initData.user.first_name || 'Игрок';
+                debugLog('👤 Игрок: ' + userName + ' (ID: ' + gameState.playerId + ')');
+            }} else {{
+                debugLog('❌ Нет данных пользователя!');
+                return;
             }}
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            gameState.gameId = urlParams.get('game_id');
+            
+            if (!gameState.gameId) {{
+                debugLog('❌ Не найден ID игры!');
+                tg.showPopup({{
+                    title: '❌ Ошибка',
+                    message: 'Не найден ID игры',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            debugLog('🎮 Game ID: ' + gameState.gameId);
+            
+            // Подключаемся к игре
+            connectToGame();
+            
+            // Кнопки
+            const startBtn = document.getElementById('start-game');
+            if (startBtn) {{
+                debugLog('✅ Кнопка "Начать" найдена');
+                startBtn.addEventListener('click', function(e) {{
+                    debugLog('🔄 КЛИК по кнопке "Начать"');
+                    startGame();
+                }});
+            }} else {{
+                debugLog('❌ Кнопка "Начать" НЕ найдена!');
+            }}
+            
+            const revealBtn = document.getElementById('reveal-card');
+            if (revealBtn) {{
+                revealBtn.addEventListener('click', revealCard);
+            }}
+            
+            const voteBtn = document.getElementById('vote-btn');
+            if (voteBtn) {{
+                voteBtn.addEventListener('click', submitVote);
+            }}
+        }});
 
-            document.addEventListener('DOMContentLoaded', () => {{
-                console.log('🤠 Кафе ОАЗИС загружено!');
-                console.log('📡 API URL:', API_BASE);
-                showDebug('Загрузка...');
+        // ПОДКЛЮЧЕНИЕ К ИГРЕ
+        async function connectToGame() {{
+            debugLog('🔄 Подключение к API...');
+            try {{
+                const url = API_BASE + '/api/game/state';
+                debugLog('📍 URL: ' + url);
                 
-                const initData = tg.initDataUnsafe;
-                if (initData && initData.user) {{
-                    gameState.playerId = initData.user.id;
-                    const userName = initData.user.first_name || 'Игрок';
-                    console.log(`👤 Игрок: ${{userName}} (ID: ${{gameState.playerId}})`);
-                    showDebug(`Игрок: ${{userName}} | ID: ${{gameState.playerId}}`);
-                }} else {{
-                    showError('Не удалось получить данные пользователя');
-                    return;
-                }}
-                
-                const urlParams = new URLSearchParams(window.location.search);
-                gameState.gameId = urlParams.get('game_id');
-                
-                if (!gameState.gameId) {{
-                    showError('Не найден ID игры. Начните игру заново.');
-                    tg.showPopup({{
-                        title: '❌ Ошибка',
-                        message: 'Не найден ID игры. Начните игру заново.',
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
-                    return;
-                }}
-                
-                console.log('🎮 Game ID:', gameState.gameId);
-                showDebug(`Game ID: ${{gameState.gameId}}`);
-                
-                // Подключаемся к игре
-                connectToGame();
-                
-                document.getElementById('start-game')?.addEventListener('click', startGame);
-                document.getElementById('reveal-card')?.addEventListener('click', revealCard);
-                document.getElementById('vote-btn')?.addEventListener('click', submitVote);
-            }});
-
-            async function connectToGame() {{
-                try {{
-                    console.log('🔄 Подключение к API...');
-                    const url = API_BASE + '/api/game/state';
-                    console.log('📍 URL:', url);
-                    showDebug('Подключение к API...');
-                    
-                    const payload = {{
+                const response = await fetch(url, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         player_id: gameState.playerId,
                         game_id: gameState.gameId,
-                    }};
-                    console.log('📤 Отправка:', payload);
-                    
-                    const response = await fetch(url, {{
-                        method: 'POST',
-                        headers: {{
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        }},
-                        body: JSON.stringify(payload)
-                    }});
-                    
-                    console.log('📡 Статус ответа:', response.status);
-                    console.log('📡 Заголовки:', response.headers);
-                    
-                    if (!response.ok) {{
-                        throw new Error(`HTTP ошибка: ${{response.status}}`);
-                    }}
-                    
-                    const data = await response.json();
-                    console.log('📦 Данные от сервера:', data);
-                    
-                    if (data.status === 'success') {{
-                        gameState.players = data.players || [];
-                        gameState.status = data.status || 'lobby';
-                        gameState.isHost = data.is_host || false;
-                        console.log('👑 isHost:', gameState.isHost);
-                        showDebug(`Статус: ${{gameState.status}} | Игроков: ${{gameState.players.length}}`);
-                        
-                        // Проверяем, есть ли игрок в игре
-                        const playerExists = gameState.players.some(p => String(p.id) === String(gameState.playerId));
-                        console.log('👤 Игрок в игре?', playerExists);
-                        
-                        if (!playerExists && gameState.status === 'waiting') {{
-                            console.log('🔄 Игрок не в игре, присоединяемся...');
-                            await joinGame();
-                        }}
-                        
-                        updateUI();
-                        
-                        if (gameState.status !== 'lobby') {{
-                            await getMyCards();
-                        }}
-                    }} else {{
-                        console.error('❌ Ошибка API:', data);
-                        showError(data.message || 'Не удалось подключиться к игре');
-                        tg.showPopup({{
-                            title: '❌ Ошибка',
-                            message: data.message || 'Не удалось подключиться к игре',
-                            buttons: [{{text: 'OK', type: 'default'}}]
-                        }});
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка сети:', error);
-                    console.error('❌ Stack:', error.stack);
-                    showError('Ошибка сети: ' + error.message);
-                    tg.showPopup({{
-                        title: '❌ Ошибка сети',
-                        message: 'Не удалось подключиться к серверу.\nОшибка: ' + error.message,
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
+                    }})
+                }});
+                
+                debugLog('📡 Статус: ' + response.status);
+                
+                if (!response.ok) {{
+                    throw new Error('HTTP ' + response.status);
                 }}
+                
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data).substring(0, 200));
+                
+                if (data.status === 'success') {{
+                    gameState.players = data.players || [];
+                    gameState.status = data.status || 'lobby';
+                    gameState.isHost = data.is_host || false;
+                    debugLog('👑 isHost: ' + gameState.isHost);
+                    debugLog('👥 Игроков: ' + gameState.players.length);
+                    
+                    const playerExists = gameState.players.some(p => String(p.id) === String(gameState.playerId));
+                    debugLog('👤 В игре? ' + playerExists);
+                    
+                    if (!playerExists && gameState.status === 'waiting') {{
+                        debugLog('🔄 Присоединяемся...');
+                        await joinGame();
+                    }}
+                    
+                    updateUI();
+                    
+                    if (gameState.status !== 'lobby') {{
+                        await getMyCards();
+                    }}
+                }} else {{
+                    debugLog('❌ Ошибка API: ' + (data.message || 'неизвестно'));
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка: ' + error.message);
+                tg.showPopup({{
+                    title: '❌ Ошибка',
+                    message: 'Не удалось подключиться: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
             }}
+        }}
 
-            async function joinGame() {{
-                try {{
-                    const initData = tg.initDataUnsafe;
-                    const user = initData?.user;
-                    const userName = user?.first_name || 'Игрок';
-                    const username = user?.username || '';
-                    
-                    console.log('🔄 Присоединение к игре...');
-                    const url = API_BASE + '/api/game/join';
-                    console.log('📍 URL:', url);
-                    
-                    const payload = {{
+        // ПРИСОЕДИНЕНИЕ К ИГРЕ
+        async function joinGame() {{
+            try {{
+                const initData = tg.initDataUnsafe;
+                const user = initData?.user;
+                const userName = user?.first_name || 'Игрок';
+                const username = user?.username || '';
+                
+                debugLog('🔄 Присоединение: ' + userName);
+                
+                const response = await fetch(API_BASE + '/api/game/join', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
                         player_id: gameState.playerId,
                         player_name: userName,
                         username: username,
                         game_id: gameState.gameId,
-                    }};
-                    console.log('📤 Отправка:', payload);
-                    
-                    const response = await fetch(url, {{
-                        method: 'POST',
-                        headers: {{
-                            'Content-Type': 'application/json',
-                            'Accept': 'application/json'
-                        }},
-                        body: JSON.stringify(payload)
-                    }});
-                    
-                    const data = await response.json();
-                    console.log('📦 Ответ:', data);
-                    
-                    if (data.status === 'success') {{
-                        gameState.players = data.players || [];
-                        updateUI();
-                        showDebug(`Присоединился: ${{userName}}`);
-                        tg.showPopup({{
-                            title: '✅ Присоединились!',
-                            message: `Добро пожаловать, ${{userName}}!`,
-                            buttons: [{{text: 'OK', type: 'default'}}]
-                        }});
-                    }} else {{
-                        showError(data.message || 'Ошибка присоединения');
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка присоединения:', error);
-                    showError('Ошибка присоединения: ' + error.message);
+                    }})
+                }});
+                
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data).substring(0, 200));
+                
+                if (data.status === 'success') {{
+                    gameState.players = data.players || [];
+                    updateUI();
+                    debugLog('✅ Присоединился: ' + userName);
+                }} else {{
+                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
                 }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка присоединения: ' + error.message);
             }}
+        }}
 
-            // ============================================
-            // ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений)
-            // ============================================
+        // НАЧАЛО ИГРЫ
+        async function startGame() {{
+            debugLog('🔄 КНОПКА "НАЧАТЬ" НАЖАТА!');
+            debugLog('👑 isHost: ' + gameState.isHost);
+            debugLog('👤 playerId: ' + gameState.playerId);
+            debugLog('👥 Игроков: ' + gameState.players.length);
             
-            async function getMyCards() {{
-                try {{
-                    const response = await fetch(API_BASE + '/api/game/cards', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            player_id: gameState.playerId,
-                            game_id: gameState.gameId,
-                        }})
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'success') {{
-                        gameState.myCards = data.cards || [];
-                        gameState.revealedCards = data.revealed || [];
-                        renderCards();
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка получения карт:', error);
-                }}
+            if (!gameState.isHost) {{
+                debugLog('⛔ ОШИБКА: Пользователь НЕ ведущий!');
+                tg.showPopup({{
+                    title: '⛔',
+                    message: 'Только ведущий может начать игру!\n\nТвой ID: ' + gameState.playerId,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
             }}
+            
+            if (gameState.players.length < 4) {{
+                debugLog('👥 Мало игроков: ' + gameState.players.length);
+                tg.showPopup({{
+                    title: '👥',
+                    message: 'Нужно минимум 4 игрока! Сейчас: ' + gameState.players.length,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            try {{
+                debugLog('📤 Отправка запроса на старт...');
+                const url = API_BASE + '/api/game/start';
+                debugLog('📍 URL: ' + url);
+                
+                const response = await fetch(url, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                    }})
+                }});
+                
+                debugLog('📡 Статус: ' + response.status);
+                const data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {{
+                    debugLog('✅ Игра началась!');
+                    gameState.status = 'playing';
+                    updateUI();
+                    await getMyCards();
+                    tg.showPopup({{
+                        title: '🔥',
+                        message: 'Игра началась!',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }} else {{
+                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка старта',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка сети: ' + error.message);
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+            }}
+        }}
 
-            async function startGame() {{
-                if (!gameState.isHost) {{
+        // ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений)
+        async function getMyCards() {{
+            try {{
+                const response = await fetch(API_BASE + '/api/game/cards', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        player_id: gameState.playerId,
+                        game_id: gameState.gameId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    gameState.myCards = data.cards || [];
+                    gameState.revealedCards = data.revealed || [];
+                    renderCards();
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка получения карт: ' + error.message);
+            }}
+        }}
+
+        async function revealCard() {{
+            const cardIndex = gameState.myCards.findIndex(c => !c.isRevealed);
+            
+            if (cardIndex === -1) {{
+                tg.showPopup({{
+                    title: '🃏',
+                    message: 'Все карты уже открыты!',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/reveal', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                        card_index: cardIndex,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    gameState.myCards[cardIndex].isRevealed = true;
+                    gameState.revealedCards = data.revealed_cards || [];
+                    renderCards();
+                    
+                    if (gameState.myCards.every(c => c.isRevealed)) {{
+                        setTimeout(() => startVoting(), 1500);
+                    }}
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка открытия карты: ' + error.message);
+            }}
+        }}
+
+        async function startVoting() {{
+            gameState.status = 'voting';
+            updateUI();
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/voting/players', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    renderVotingList(data.players);
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка голосования: ' + error.message);
+            }}
+        }}
+
+        function renderVotingList(players) {{
+            const container = document.getElementById('voting-list');
+            container.innerHTML = '';
+            
+            players.forEach(player => {{
+                const card = document.createElement('div');
+                card.className = 'character-card voting-card';
+                card.innerHTML = `
+                    <div class="card-type">Игрок</div>
+                    <div class="card-name">${{player.name}}</div>
+                    <div class="card-effect">${{player.role || 'Без роли'}}</div>
+                    <input type="radio" name="vote" value="${{player.id}}" id="vote-${{player.id}}">
+                    <label for="vote-${{player.id}}">Голосовать</label>
+                `;
+                container.appendChild(card);
+            }});
+        }}
+
+        async function submitVote() {{
+            const selected = document.querySelector('input[name="vote"]:checked');
+            
+            if (!selected) {{
+                tg.showPopup({{
+                    title: '⚠️',
+                    message: 'Выберите игрока!',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            const targetId = parseInt(selected.value);
+            
+            try {{
+                const response = await fetch(API_BASE + '/api/game/vote', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        game_id: gameState.gameId,
+                        player_id: gameState.playerId,
+                        target_id: targetId,
+                    }})
+                }});
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {{
+                    document.getElementById('vote-btn').disabled = true;
                     tg.showPopup({{
-                        title: '⛔',
-                        message: 'Только ведущий может начать игру!',
+                        title: '✅',
+                        message: 'Голос учтён!',
                         buttons: [{{text: 'OK', type: 'default'}}]
                     }});
-                    return;
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка отправки голоса: ' + error.message);
+            }}
+        }}
+
+        function updateUI() {{
+            const lobby = document.getElementById('lobby');
+            const gameArea = document.getElementById('game-area');
+            const votingArea = document.getElementById('voting-area');
+            
+            if (gameState.status === 'lobby') {{
+                lobby.style.display = 'block';
+                gameArea.style.display = 'none';
+                renderPlayersList();
+            }} else if (gameState.status === 'voting') {{
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'none';
+                document.getElementById('voting-area').style.display = 'block';
+            }} else if (gameState.status === 'playing') {{
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'block';
+                document.getElementById('voting-area').style.display = 'none';
+            }}
+        }}
+
+        function renderPlayersList() {{
+            const container = document.getElementById('players-list');
+            container.innerHTML = '';
+            
+            gameState.players.forEach(player => {{
+                const div = document.createElement('div');
+                div.className = 'player-item';
+                div.innerHTML = `
+                    <span>👤 ${{player.name}}</span>
+                    ${{player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : ''}}
+                `;
+                container.appendChild(div);
+            }});
+            
+            const startBtn = document.getElementById('start-game');
+            if (gameState.players.length >= 4 && gameState.isHost) {{
+                startBtn.style.display = 'block';
+                startBtn.textContent = `🔥 Начать игру (${{gameState.players.length}} игроков)`;
+                startBtn.disabled = false;
+            }} else if (gameState.isHost) {{
+                startBtn.style.display = 'block';
+                startBtn.textContent = `👥 Нужно ещё ${{4 - gameState.players.length}} игроков`;
+                startBtn.disabled = true;
+            }} else {{
+                startBtn.style.display = 'none';
+            }}
+        }}
+
+        function renderCards() {{
+            const container = document.getElementById('cards-container');
+            container.innerHTML = '';
+            
+            gameState.myCards.forEach((card) => {{
+                const div = document.createElement('div');
+                div.className = 'character-card';
+                
+                if (card.isRevealed) {{
+                    div.style.borderColor = '#ff6b35';
+                    div.style.opacity = '1';
+                }} else {{
+                    div.style.borderColor = '#666';
+                    div.style.opacity = '0.7';
                 }}
                 
-                if (gameState.players.length < 4) {{
-                    tg.showPopup({{
-                        title: '👥',
-                        message: 'Нужно минимум 4 игрока!',
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
-                    return;
-                }}
-                
+                div.innerHTML = `
+                    <div class="card-type">${{card.type || 'Карта'}}</div>
+                    <div class="card-name">${{card.isRevealed ? card.name : '❓ Скрыто'}}</div>
+                    <div class="card-effect">${{card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"'}}</div>
+                    ${{card.isRevealed ? `<div class="card-rarity">⭐ ${{card.rarity || 'Обычная'}}</div>` : ''}}
+                `;
+                container.appendChild(div);
+            }});
+            
+            const remaining = gameState.myCards.filter(c => !c.isRevealed).length;
+            document.getElementById('reveal-card').textContent = 
+                `🃏 Открыть карту (осталось: ${{remaining}})`;
+        }}
+
+        // АВТООБНОВЛЕНИЕ
+        setInterval(async () => {{
+            if (gameState.status !== 'finished' && gameState.status !== 'voting') {{
                 try {{
-                    const response = await fetch(API_BASE + '/api/game/start', {{
+                    const response = await fetch(API_BASE + '/api/game/state', {{
                         method: 'POST',
                         headers: {{'Content-Type': 'application/json'}},
                         body: JSON.stringify({{
-                            game_id: gameState.gameId,
                             player_id: gameState.playerId,
+                            game_id: gameState.gameId,
                         }})
                     }});
                     
                     const data = await response.json();
                     
-                    if (data.status === 'success') {{
-                        gameState.status = 'playing';
+                    if (data.status === 'success' && data.status !== gameState.status) {{
+                        gameState.status = data.status;
                         updateUI();
-                        await getMyCards();
-                        tg.showPopup({{
-                            title: '🔥',
-                            message: 'Игра началась!',
-                            buttons: [{{text: 'OK', type: 'default'}}]
-                        }});
-                    }} else {{
-                        tg.showPopup({{
-                            title: '❌',
-                            message: data.message || 'Ошибка старта',
-                            buttons: [{{text: 'OK', type: 'default'}}]
-                        }});
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка:', error);
-                }}
-            }}
-
-            async function revealCard() {{
-                const cardIndex = gameState.myCards.findIndex(c => !c.isRevealed);
-                
-                if (cardIndex === -1) {{
-                    tg.showPopup({{
-                        title: '🃏',
-                        message: 'Все карты уже открыты!',
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
-                    return;
-                }}
-                
-                try {{
-                    const response = await fetch(API_BASE + '/api/game/reveal', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            game_id: gameState.gameId,
-                            player_id: gameState.playerId,
-                            card_index: cardIndex,
-                        }})
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'success') {{
-                        gameState.myCards[cardIndex].isRevealed = true;
-                        gameState.revealedCards = data.revealed_cards || [];
-                        renderCards();
                         
-                        if (gameState.myCards.every(c => c.isRevealed)) {{
-                            setTimeout(() => startVoting(), 1500);
+                        if (data.status === 'voting') {{
+                            await startVoting();
                         }}
                     }}
                 }} catch (error) {{
-                    console.error('❌ Ошибка:', error);
+                    // Игнорируем
                 }}
             }}
+        }}, 5000);
 
-            async function startVoting() {{
-                gameState.status = 'voting';
-                updateUI();
-                
-                try {{
-                    const response = await fetch(API_BASE + '/api/game/voting/players', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            game_id: gameState.gameId,
-                            player_id: gameState.playerId,
-                        }})
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'success') {{
-                        renderVotingList(data.players);
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка:', error);
-                }}
-            }}
-
-            function renderVotingList(players) {{
-                const container = document.getElementById('voting-list');
-                container.innerHTML = '';
-                
-                players.forEach(player => {{
-                    const card = document.createElement('div');
-                    card.className = 'character-card voting-card';
-                    card.innerHTML = `
-                        <div class="card-type">Игрок</div>
-                        <div class="card-name">${{player.name}}</div>
-                        <div class="card-effect">${{player.role || 'Без роли'}}</div>
-                        <input type="radio" name="vote" value="${{player.id}}" id="vote-${{player.id}}">
-                        <label for="vote-${{player.id}}">Голосовать</label>
-                    `;
-                    container.appendChild(card);
-                }});
-            }}
-
-            async function submitVote() {{
-                const selected = document.querySelector('input[name="vote"]:checked');
-                
-                if (!selected) {{
-                    tg.showPopup({{
-                        title: '⚠️',
-                        message: 'Выберите игрока!',
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
-                    return;
-                }}
-                
-                const targetId = parseInt(selected.value);
-                
-                try {{
-                    const response = await fetch(API_BASE + '/api/game/vote', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{
-                            game_id: gameState.gameId,
-                            player_id: gameState.playerId,
-                            target_id: targetId,
-                        }})
-                    }});
-                    
-                    const data = await response.json();
-                    
-                    if (data.status === 'success') {{
-                        document.getElementById('vote-btn').disabled = true;
-                        tg.showPopup({{
-                            title: '✅',
-                            message: 'Голос учтён!',
-                            buttons: [{{text: 'OK', type: 'default'}}]
-                        }});
-                    }}
-                }} catch (error) {{
-                    console.error('❌ Ошибка:', error);
-                }}
-            }}
-
-            function updateUI() {{
-                const lobby = document.getElementById('lobby');
-                const gameArea = document.getElementById('game-area');
-                const votingArea = document.getElementById('voting-area');
-                
-                if (gameState.status === 'lobby') {{
-                    lobby.style.display = 'block';
-                    gameArea.style.display = 'none';
-                    renderPlayersList();
-                }} else if (gameState.status === 'voting') {{
-                    lobby.style.display = 'none';
-                    gameArea.style.display = 'block';
-                    document.getElementById('character-cards').style.display = 'none';
-                    document.getElementById('voting-area').style.display = 'block';
-                }} else if (gameState.status === 'playing') {{
-                    lobby.style.display = 'none';
-                    gameArea.style.display = 'block';
-                    document.getElementById('character-cards').style.display = 'block';
-                    document.getElementById('voting-area').style.display = 'none';
-                }}
-            }}
-
-            function renderPlayersList() {{
-                const container = document.getElementById('players-list');
-                container.innerHTML = '';
-                
-                gameState.players.forEach(player => {{
-                    const div = document.createElement('div');
-                    div.className = 'player-item';
-                    div.innerHTML = `
-                        <span>👤 ${{player.name}}</span>
-                        ${{player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : ''}}
-                    `;
-                    container.appendChild(div);
-                }});
-                
-                const startBtn = document.getElementById('start-game');
-                if (gameState.players.length >= 4 && gameState.isHost) {{
-                    startBtn.style.display = 'block';
-                    startBtn.textContent = `🔥 Начать игру (${{gameState.players.length}} игроков)`;
-                    startBtn.disabled = false;
-                }} else if (gameState.isHost) {{
-                    startBtn.style.display = 'block';
-                    startBtn.textContent = `👥 Нужно ещё ${{4 - gameState.players.length}} игроков`;
-                    startBtn.disabled = true;
-                }} else {{
-                    startBtn.style.display = 'none';
-                }}
-            }}
-
-            function renderCards() {{
-                const container = document.getElementById('cards-container');
-                container.innerHTML = '';
-                
-                gameState.myCards.forEach((card) => {{
-                    const div = document.createElement('div');
-                    div.className = 'character-card';
-                    
-                    if (card.isRevealed) {{
-                        div.style.borderColor = '#ff6b35';
-                        div.style.opacity = '1';
-                    }} else {{
-                        div.style.borderColor = '#666';
-                        div.style.opacity = '0.7';
-                    }}
-                    
-                    div.innerHTML = `
-                        <div class="card-type">${{card.type || 'Карта'}}</div>
-                        <div class="card-name">${{card.isRevealed ? card.name : '❓ Скрыто'}}</div>
-                        <div class="card-effect">${{card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"'}}</div>
-                        ${{card.isRevealed ? `<div class="card-rarity">⭐ ${{card.rarity || 'Обычная'}}</div>` : ''}}
-                    `;
-                    container.appendChild(div);
-                }});
-                
-                const remaining = gameState.myCards.filter(c => !c.isRevealed).length;
-                document.getElementById('reveal-card').textContent = 
-                    `🃏 Открыть карту (осталось: ${{remaining}})`;
-            }}
-
-            console.log('✅ Mini App готов!');
-            console.log('📡 API URL:', API_BASE);
-        }})();
+        debugLog('✅ Mini App готов!');
+        debugLog('📡 API: ' + API_BASE);
     </script>
 </body>
 </html>'''
@@ -1016,11 +1043,10 @@ def generate_cards_for_player():
     return cards
 
 # ============================================
-# 10. CORS MIDDLEWARE (ВАЖНО!)
+# 10. CORS MIDDLEWARE
 # ============================================
 @web.middleware
 async def cors_middleware(request, handler):
-    """Добавляет CORS заголовки к ответам"""
     response = await handler(request)
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
@@ -1045,8 +1071,6 @@ async def api_get_state(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        print(f"🔍 Ищем игру: {game_id}")
-        
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -1054,14 +1078,11 @@ async def api_get_state(request):
                 break
         
         if not game:
-            print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
-        
-        print(f"✅ Игра найдена. Статус: {game['status']}")
         
         player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         
-        response_data = {
+        return web.json_response({
             'status': 'success',
             'game_id': game['game_id'],
             'status': game['status'],
@@ -1069,10 +1090,7 @@ async def api_get_state(request):
             'round': game['round'],
             'max_rounds': game['max_rounds'],
             'is_host': str(game['host_id']) == str(player_id) if player else False,
-        }
-        print(f"📤 Ответ: {response_data}")
-        
-        return web.json_response(response_data)
+        })
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1085,9 +1103,6 @@ async def api_join_game(request):
         player_name = data.get('player_name')
         username = data.get('username', '')
         game_id = data.get('game_id')
-        
-        print(f"👤 Игрок: {player_name} (ID: {player_id})")
-        print(f"🎮 Игра: {game_id}")
         
         game = None
         for g in games.values():
@@ -1146,7 +1161,6 @@ async def api_start_game(request):
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         if str(game['host_id']) != str(player_id):
-            print(f"❌ Ошибка: игрок {player_id} не ведущий (хост: {game['host_id']})")
             return web.json_response({'status': 'error', 'message': 'Только ведущий может начать игру'}, status=403)
         
         if len(game['players']) < 4:
@@ -1356,7 +1370,6 @@ async def serve_css(request):
     return web.Response(text=CSS_STYLES, content_type='text/css')
 
 async def handle_options(request):
-    """Обработка preflight OPTIONS запросов для CORS"""
     return web.Response(headers={
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
@@ -1372,14 +1385,10 @@ async def main():
     
     app = web.Application(middlewares=[cors_middleware])
     
-    # Статика
     app.router.add_get('/', serve_html)
     app.router.add_get('/style.css', serve_css)
-    
-    # OPTIONS для CORS preflight
     app.router.add_options('/api/{path:.*}', handle_options)
     
-    # API
     app.router.add_get('/api/test', api_test)
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
