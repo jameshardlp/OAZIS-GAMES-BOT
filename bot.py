@@ -16,14 +16,11 @@ from dotenv import load_dotenv
 # ============================================
 # 1. ЗАГРУЖАЕМ .env ФАЙЛ
 # ============================================
-load_dotenv()  # Загружаем переменные из .env
+load_dotenv()
 
 # ============================================
-# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ
+# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ (БЕЗ ПРОБЛЕМНЫХ СТРОК!)
 # ============================================
-sys.stdout = os.fdopen(sys.stdout.fileno(), 'w', 0)
-sys.stderr = os.fdopen(sys.stderr.fileno(), 'w', 0)
-
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -33,18 +30,14 @@ logging.basicConfig(
 print("=" * 60)
 print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
 print("=" * 60)
-sys.stdout.flush()
 
 # ============================================
 # 3. КОНФИГУРАЦИЯ (ВСЁ ИЗ .env!)
 # ============================================
-
-# 👇 ВСЕ СЕКРЕТЫ БЕРУТСЯ ИЗ .env
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
 PORT = int(os.getenv("PORT", 8082))
 
-# Проверяем, что токен загружен
 if not BOT_TOKEN:
     print("❌ ОШИБКА: BOT_TOKEN не найден в .env файле!")
     print("📝 Создай файл .env с содержимым:")
@@ -60,7 +53,6 @@ if not WEBAPP_URL:
 print(f"🔌 Порт: {PORT}")
 print(f"🤖 Токен: ✅ Загружен из .env")
 print(f"🌐 URL: {WEBAPP_URL}")
-sys.stdout.flush()
 
 # ============================================
 # 4. ИНИЦИАЛИЗАЦИЯ
@@ -71,7 +63,7 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА (без изменений)
+# 5. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = '''<!DOCTYPE html>
 <html lang="ru">
@@ -117,7 +109,7 @@ HTML_PAGE = '''<!DOCTYPE html>
 </html>'''
 
 # ============================================
-# 6. CSS СТИЛИ (без изменений)
+# 6. CSS СТИЛИ
 # ============================================
 CSS_STYLES = '''* {
     margin: 0;
@@ -1160,7 +1152,6 @@ async def main():
     print(f"✅ Сервер запущен на порту {PORT}")
     print(f"📱 Mini App: {WEBAPP_URL}")
     print(f"🧪 Тестовый API: {WEBAPP_URL}/api/test")
-    sys.stdout.flush()
     
     await site.start()
     await asyncio.Event().wait()
@@ -1172,4 +1163,3 @@ if __name__ == "__main__":
         print(f"❌ ОШИБКА: {e}")
         import traceback
         traceback.print_exc()
-        sys.stdout.flush()
