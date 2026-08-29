@@ -1144,12 +1144,17 @@ async def game_callback(callback: types.CallbackQuery):
     print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
     print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
     print(f"🎮 Game Short Name: {callback.game_short_name}")
-    print(f"💬 Chat ID: {callback.message.chat.id}")
-    print(f"💬 Chat Type: {callback.message.chat.type}")
     print("=" * 60)
     
-    # ★★★ ИСПОЛЬЗУЕМ chat_id КАК КЛЮЧ ДЛЯ ИГРЫ ★★★
-    chat_id = str(callback.message.chat.id)
+    # ★★★ ИСПРАВЛЕНО: проверяем наличие message ★★★
+    if callback.message is None:
+        print("⚠️ callback.message is None, используем user_id как ключ")
+        chat_id = str(callback.from_user.id)
+    else:
+        chat_id = str(callback.message.chat.id)
+        print(f"💬 Chat ID: {chat_id}")
+        print(f"💬 Chat Type: {callback.message.chat.type}")
+    
     user_id = callback.from_user.id
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     
@@ -1276,7 +1281,6 @@ async def api_get_state(request):
         print(f"🔍 Поиск игры: {game_id}")
         print(f"👤 Player ID: {player_id}")
         
-        # Ищем игру по game_id во всех чатах
         game = None
         chat_id = None
         for cid, g in games.items():
@@ -1323,7 +1327,6 @@ async def api_join_game(request):
         print(f"👤 Игрок: {player_name} (ID: {player_id})")
         print(f"🎮 Игра: {game_id}")
         
-        # Ищем игру по game_id
         game = None
         chat_id = None
         for cid, g in games.items():
@@ -1341,7 +1344,6 @@ async def api_join_game(request):
         if len(game['players']) >= 6:
             return web.json_response({'status': 'error', 'message': 'Игра заполнена'}, status=400)
         
-        # Проверяем, есть ли уже такой игрок
         if player_id and any(str(p['id']) == str(player_id) for p in game['players']):
             return web.json_response({
                 'status': 'success',
