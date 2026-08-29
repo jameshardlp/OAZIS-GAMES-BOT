@@ -64,7 +64,41 @@ games = {}
 CARDS = None
 
 # ============================================
-# 5. HTML СТРАНИЦА ДЛЯ GAMES
+# 5. ТЕКСТЫ
+# ============================================
+GAME_INVITE_TEXT = """🧟 **ЗОМБИ-АПОКАЛИПСИС!**
+
+Группа выживших нашла убежище в кафе **«ОАЗИС»**.
+Мест хватит только на половину из вас!
+
+👑 **Ведущий:** {host_name}
+👥 **Соберите от 4 до 6 игроков!**
+
+Нажми кнопку **«Играть»** чтобы присоединиться!"""
+
+RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
+
+🎯 **Цель:** Убедить других, что ты достоин попасть в убежище.
+
+🃏 **Карты:** Каждый игрок получает 5 карт:
+• Роль (профессия)
+• Здоровье (физическое состояние)
+• Навык (умение выживать)
+• Предмет (полезная вещь)
+• Секрет (личная тайна)
+
+📋 **Ход игры:**
+1️⃣ Каждый раунд игроки открывают по одной карте
+2️⃣ После открытия всех карт — голосование
+3️⃣ Кто набрал больше голосов — выбывает
+4️⃣ Игра длится 5 раундов
+
+🏆 **Победа:** Выжившие после 5 раундов попадают в убежище!
+
+🎯 **Главное — харизма и убеждение!**"""
+
+# ============================================
+# 6. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -91,7 +125,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 <h2>👥 Лобби</h2>
                 <div id="players-list"></div>
                 <button id="start-game" class="btn-neon">🔥 Начать игру</button>
-                <button id="share-game" class="btn-neon" style="background:#ff6b35;color:#0a0a0a;">📤 Пригласить друзей</button>
             </div>
             <div id="game-area" style="display:none;">
                 <div id="character-cards">
@@ -119,7 +152,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
         // ============================================
         
         const API_BASE = '{WEBAPP_URL}';
-        const BOT_USERNAME = 'oazisgamesbot';
         
         function debugLog(message) {{
             var logEl = document.getElementById('debug-log');
@@ -190,17 +222,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('❌ Кнопка "Начать" НЕ найдена!');
             }}
             
-            var shareBtn = document.getElementById('share-game');
-            if (shareBtn) {{
-                debugLog('✅ Кнопка "Пригласить" найдена');
-                shareBtn.addEventListener('click', function() {{
-                    debugLog('🔄 НАЖАТА КНОПКА "ПРИГЛАСИТЬ"!');
-                    shareGame();
-                }});
-            }} else {{
-                debugLog('❌ Кнопка "Пригласить" НЕ найдена!');
-            }}
-            
             var revealBtn = document.getElementById('reveal-card');
             if (revealBtn) {{
                 revealBtn.addEventListener('click', revealCard);
@@ -213,25 +234,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             debugLog('✅ Инициализация завершена');
         }});
-
-        function shareGame() {{
-            debugLog('🔄 ПРИГЛАШЕНИЕ ДРУЗЕЙ');
-            var tg = window.Telegram.WebApp;
-            var shareText = '🎮 Присоединяйся к игре "Кафе ОАЗИС"!\n\nНапиши @' + BOT_USERNAME + ' в любом чате и нажми "Play"!';
-            
-            // Отправляем через Telegram
-            tg.sendData(JSON.stringify({{
-                action: 'share',
-                text: shareText,
-            }}));
-            
-            // Также показываем попап с инструкцией
-            tg.showPopup({{
-                title: '👥 Пригласить друзей',
-                message: 'Отправь друзьям сообщение:\n\n' + shareText + '\n\nИли просто скажи им написать @' + BOT_USERNAME + ' в любом чате!',
-                buttons: [{{text: '📋 Копировать', id: 'copy'}}, {{text: 'OK', type: 'default'}}]
-            }});
-        }}
 
         async function connectToGame() {{
             debugLog('🔄 Подключение к API...');
@@ -702,7 +704,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
 </html>'''
 
 # ============================================
-# 6. CSS СТИЛИ
+# 7. CSS СТИЛИ
 # ============================================
 CSS_STYLES = '''* {
     margin: 0;
@@ -822,7 +824,7 @@ body {
 }'''
 
 # ============================================
-# 7. ЗАГРУЗКА КАРТ
+# 8. ЗАГРУЗКА КАРТ
 # ============================================
 def load_cards():
     global CARDS
@@ -871,7 +873,7 @@ def load_cards():
     print("✅ Используются дефолтные карты")
 
 # ============================================
-# 8. КОМАНДЫ БОТА
+# 9. КОМАНДЫ БОТА
 # ============================================
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -879,7 +881,7 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Нажми кнопку «Play»\n"
+        "2️⃣ Нажми кнопку «Начать игру»\n"
         "3️⃣ Присоединяйся к игре!\n\n"
         "📋 **Команды:**\n"
         "/oasis - Создать игру (в личном чате)\n"
@@ -933,6 +935,10 @@ async def cmd_oasis(message: types.Message):
         parse_mode="Markdown",
         reply_markup=keyboard
     )
+
+@dp.message(Command("rules"))
+async def cmd_rules(message: types.Message):
+    await message.answer(RULES_TEXT, parse_mode="Markdown")
 
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
@@ -1082,28 +1088,16 @@ async def cmd_stop_game(message: types.Message):
     del games[chat_id]
     await message.answer("⛔ Игра остановлена ведущим!")
 
-@dp.message(Command("rules"))
-async def cmd_rules(message: types.Message):
-    await message.answer(
-        "📖 **ПРАВИЛА ИГРЫ 'КАФЕ ОАЗИС'**\n\n"
-        "1️⃣ Каждый получает 5 карт: Роль, Здоровье, Навык, Предмет, Секрет\n"
-        "2️⃣ За 5 раундов нужно убедить других, что ты достоин остаться\n"
-        "3️⃣ В каждом раунде игроки по очереди открывают карту\n"
-        "4️⃣ После обсуждения - тайное голосование\n"
-        "5️⃣ Кто набрал больше голосов - выбывает\n"
-        "6️⃣ Побеждают те, кто остался в живых\n\n"
-        "🎯 Главное - харизма и убеждение!\n"
-        "🔥 Игра создана по мотивам 'Бункера' в сеттинге зомби-апокалипсиса",
-        parse_mode="Markdown"
-    )
-
 # ============================================
-# 9. INLINE-РЕЖИМ ДЛЯ @oazisgamesbot
+# 10. INLINE-РЕЖИМ (@oazisgamesbot)
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
     """Обработка @oazisgamesbot в любом чате"""
     
+    results = []
+    
+    # --- 1. КНОПКА "НАЧАТЬ ИГРУ" ---
     # Генерируем уникальный ID игры
     game_id = str(uuid.uuid4())[:8]
     
@@ -1125,37 +1119,58 @@ async def inline_query_handler(query: types.InlineQuery):
     # Ссылка на игру
     game_url = f"{WEBAPP_URL}?game_id={game_id}"
     
-    # Кнопка для запуска игры (через WebApp)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    # Клавиатура для кнопки "Начать игру"
+    keyboard_start = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🎮 Играть в Кафе ОАЗИС",
+            text="🎮 Начать игру",
             web_app=WebAppInfo(url=game_url)
-        )],
-        [InlineKeyboardButton(
-            text="👥 Позвать друзей",
-            switch_inline_query_current_chat="присоединяйся к игре Кафе ОАЗИС!"
         )]
     ])
     
-    # Создаём результат (карточку, которая появится в чате)
-    result = types.InlineQueryResultArticle(
-        id="oasis_game",
-        title="🎮 Кафе ОАЗИС — зомби-апокалипсис",
-        description=f"Выживи в кафе посреди зомби-апокалипсиса!",
-        reply_markup=keyboard,
-        input_message_content=types.InputTextMessageContent(
-            message_text=f"🧟 **ЗОМБИ-АПОКАЛИПСИС!**\n\nГруппа выживших нашла убежище в кафе 'ОАЗИС'.\nМест хватит только на половину из вас.\n\n👑 **Ведущий:** {query.from_user.first_name}\n👥 **Присоединяйся к игре!**\n\nНажми кнопку «Играть» чтобы начать!",
+    # Результат 1: Начать игру
+    result_start = InlineQueryResultArticle(
+        id="start_game",
+        title="🎮 Начать игру",
+        description="Создать новую игру и пригласить друзей!",
+        reply_markup=keyboard_start,
+        input_message_content=InputTextMessageContent(
+            message_text=GAME_INVITE_TEXT.format(host_name=query.from_user.first_name or query.from_user.username or 'Игрок'),
             parse_mode="Markdown"
         ),
         thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
     )
     
-    await query.answer([result], cache_time=60)
+    # --- 2. КНОПКА "ПРАВИЛА" ---
+    # Клавиатура для кнопки "Правила" (открывается как WebApp, но показывает правила)
+    keyboard_rules = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="📖 Читать правила",
+            web_app=WebAppInfo(url=f"{WEBAPP_URL}/rules")
+        )]
+    ])
+    
+    # Результат 2: Правила
+    result_rules = InlineQueryResultArticle(
+        id="rules",
+        title="📖 Правила игры",
+        description="Узнай, как играть в Кафе ОАЗИС!",
+        reply_markup=keyboard_rules,
+        input_message_content=InputTextMessageContent(
+            message_text=RULES_TEXT,
+            parse_mode="Markdown"
+        ),
+        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
+    )
+    
+    results.append(result_start)
+    results.append(result_rules)
+    
+    await query.answer(results, cache_time=60)
 
 # ============================================
-# 10. ОБРАБОТКА ИГРЫ (Telegram Games)
+# 11. ОБРАБОТКА ИГРЫ (Telegram Games)
 # ============================================
-@dp.callback_query(lambda c: c.game_short_name)
+@dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
     """Обработка нажатия на кнопку Play в игре"""
     
@@ -1182,7 +1197,7 @@ async def game_callback(callback: types.CallbackQuery):
     await callback.answer(url=game_url)
 
 # ============================================
-# 11. ГЕНЕРАЦИЯ КАРТ
+# 12. ГЕНЕРАЦИЯ КАРТ
 # ============================================
 def generate_cards_for_player():
     cards = []
@@ -1231,7 +1246,7 @@ def generate_cards_for_player():
     return cards
 
 # ============================================
-# 12. CORS MIDDLEWARE
+# 13. CORS MIDDLEWARE
 # ============================================
 @web.middleware
 async def cors_middleware(request, handler):
@@ -1242,7 +1257,7 @@ async def cors_middleware(request, handler):
     return response
 
 # ============================================
-# 13. API ОБРАБОТЧИКИ
+# 14. API ОБРАБОТЧИКИ
 # ============================================
 async def api_test(request):
     print("🧪 Тестовый API вызван!")
@@ -1548,7 +1563,7 @@ async def api_submit_vote(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 # ============================================
-# 14. СТАТИЧЕСКИЕ ФАЙЛЫ
+# 15. СТАТИЧЕСКИЕ ФАЙЛЫ
 # ============================================
 async def serve_html(request):
     return web.Response(text=HTML_PAGE, content_type='text/html')
@@ -1564,7 +1579,7 @@ async def handle_options(request):
     })
 
 # ============================================
-# 15. ЗАПУСК
+# 16. ЗАПУСК
 # ============================================
 async def main():
     load_cards()
