@@ -101,7 +101,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА (С ПЕРЕДАЧЕЙ ИМЕНИ)
+# 6. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -195,7 +195,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var userIdFromUrl = urlParams.get('user_id');
             var userNameFromUrl = urlParams.get('user_name');
             
-            // ★★★ ПОЛУЧАЕМ ID ИЗ URL ★★★
             if (userIdFromUrl) {{
                 gameState.playerId = parseInt(userIdFromUrl);
                 debugLog('👤 ID из URL: ' + gameState.playerId);
@@ -227,7 +226,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }}
             }}
             
-            // ★★★ ПОЛУЧАЕМ ИМЯ ИЗ URL ★★★
             var userName = 'Игрок';
             if (userNameFromUrl) {{
                 userName = decodeURIComponent(userNameFromUrl);
@@ -255,7 +253,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 return;
             }}
             
-            // Сохраняем имя для отправки на сервер
             gameState.userName = userName;
             debugLog('👤 Итоговое имя: ' + userName);
             
@@ -1153,7 +1150,7 @@ async def inline_query_handler(query: types.InlineQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ПЕРЕДАЧЕЙ ИМЕНИ)
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ОБЩИМ game_id ДЛЯ ВСЕХ)
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1169,26 +1166,30 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # Определяем ключ для игры
+    # ★★★ ОПРЕДЕЛЯЕМ ОБЩИЙ ИДЕНТИФИКАТОР ДЛЯ ВСЕХ ИГРОКОВ ★★★
     if callback.message and callback.message.chat:
-        chat_id = str(callback.message.chat.id)
-        print(f"💬 Используем chat_id: {chat_id}")
+        # Групповой чат — все игроки используют chat_id
+        base_key = str(callback.message.chat.id)
+        print(f"💬 Групповой чат: {base_key}")
     else:
-        chat_id = str(user_id)
-        print(f"💬 Используем user_id как ключ: {chat_id}")
+        # Личный чат с ботом — используем user_id
+        base_key = str(user_id)
+        print(f"💬 Личный чат: {base_key}")
+    
+    # ★★★ СОЗДАЁМ game_id НА ОСНОВЕ base_key ★★★
+    # Это гарантирует, что все игроки из одного чата попадают в одну игру
+    game_id = f"g_{base_key}"
     
     # Проверяем, есть ли уже игра
-    if chat_id in games:
-        print(f"✅ Игра уже существует для {chat_id}")
-        game = games[chat_id]
-        game_id = game['game_id']
+    if game_id in games:
+        print(f"✅ Игра уже существует для {game_id}")
+        game = games[game_id]
     else:
         # Создаём новую игру
-        print(f"🆕 Создаём новую игру для {chat_id}")
-        game_id = str(uuid.uuid4())[:8]
-        games[chat_id] = {
+        print(f"🆕 Создаём новую игру для {game_id}")
+        games[game_id] = {
             'game_id': game_id,
-            'chat_id': chat_id,
+            'chat_id': base_key,
             'players': [],
             'status': 'waiting',
             'round': 0,
@@ -1199,9 +1200,9 @@ async def game_callback(callback: types.CallbackQuery):
             'votes': {},
             'eliminated': [],
         }
-        print(f"✅ Игра создана: {games[chat_id]}")
+        print(f"✅ Игра создана: {games[game_id]}")
     
-    # ★★★ ПЕРЕДАЁМ ID И ИМЯ В URL ★★★
+    # ★★★ ПЕРЕДАЁМ game_id В URL ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     print(f"👤 Имя в URL: {user_name}")
@@ -1292,18 +1293,16 @@ async def api_get_state(request):
         print(f"👤 Player ID: {player_id}")
         
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
             print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        print(f"✅ Игра найдена в чате: {chat_id}")
+        print(f"✅ Игра найдена")
         
         player = None
         if player_id:
@@ -1338,11 +1337,9 @@ async def api_join_game(request):
         print(f"🎮 Игра: {game_id}")
         
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
@@ -1392,11 +1389,9 @@ async def api_start_game(request):
         game_id = data.get('game_id')
         
         game = None
-        chat_id = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
-                chat_id = cid
                 break
         
         if not game:
@@ -1416,7 +1411,7 @@ async def api_start_game(request):
         game['round'] = 1
         
         await bot.send_message(
-            chat_id,
+            game['chat_id'],
             f"🔥 ИГРА НАЧАЛАСЬ!\n\n👥 Игроков: {len(game['players'])}\n📝 Раунд 1 из {game['max_rounds']}"
         )
         
@@ -1432,7 +1427,7 @@ async def api_get_cards(request):
         game_id = data.get('game_id')
         
         game = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
                 break
@@ -1461,7 +1456,7 @@ async def api_reveal_card(request):
         card_index = data.get('card_index')
         
         game = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
                 break
@@ -1510,7 +1505,7 @@ async def api_get_voting_players(request):
         game_id = data.get('game_id')
         
         game = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
                 break
@@ -1541,7 +1536,7 @@ async def api_submit_vote(request):
         target_id = data.get('target_id')
         
         game = None
-        for cid, g in games.items():
+        for g in games.values():
             if g['game_id'] == game_id:
                 game = g
                 break
