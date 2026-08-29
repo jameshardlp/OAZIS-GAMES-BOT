@@ -1146,35 +1146,25 @@ async def game_callback(callback: types.CallbackQuery):
     print(f"🎮 Game Short Name: {callback.game_short_name}")
     print("=" * 60)
     
-    # ★★★ ИСПРАВЛЕНО: проверяем наличие message ★★★
-    if callback.message is None:
-        print("⚠️ callback.message is None, используем user_id как ключ")
-        chat_id = str(callback.from_user.id)
-    else:
-        chat_id = str(callback.message.chat.id)
-        print(f"💬 Chat ID: {chat_id}")
-        print(f"💬 Chat Type: {callback.message.chat.type}")
-    
     user_id = callback.from_user.id
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     
-    print(f"💬 Ищем игру для чата: {chat_id}")
+    # Определяем ключ для игры
+    if callback.message and callback.message.chat:
+        chat_id = str(callback.message.chat.id)
+        print(f"💬 Используем chat_id: {chat_id}")
+    else:
+        chat_id = str(user_id)
+        print(f"💬 Используем user_id как ключ: {chat_id}")
     
-    # Проверяем, есть ли уже игра в этом чате
+    # Проверяем, есть ли уже игра
     if chat_id in games:
-        print(f"✅ Игра уже существует для чата {chat_id}")
+        print(f"✅ Игра уже существует для {chat_id}")
         game = games[chat_id]
         game_id = game['game_id']
-        
-        # Проверяем, есть ли игрок в игре
-        player_exists = any(str(p['id']) == str(user_id) for p in game['players'])
-        if player_exists:
-            print(f"👤 Игрок {user_id} уже в игре")
-        else:
-            print(f"👤 Игрок {user_id} ещё не в игре — добавим при входе")
     else:
-        # Создаём новую игру для этого чата
-        print(f"🆕 Создаём новую игру для чата {chat_id}")
+        # Создаём новую игру
+        print(f"🆕 Создаём новую игру для {chat_id}")
         game_id = str(uuid.uuid4())[:8]
         games[chat_id] = {
             'game_id': game_id,
@@ -1191,12 +1181,11 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ПЕРЕДАЁМ game_id И user_id В URL ★★★
+    # Формируем URL
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}"
     print(f"🔗 URL игры: {game_url}")
     
     await callback.answer(url=game_url)
-    
     print("✅ Ответ отправлен с URL игры!")
     print("=" * 60)
 
@@ -1261,7 +1250,7 @@ async def cors_middleware(request, handler):
     return response
 
 # ============================================
-# 14. API ОБРАБОТЧИКИ (С ПОДДЕРЖКОЙ chat_id)
+# 14. API ОБРАБОТЧИКИ
 # ============================================
 async def api_test(request):
     print("🧪 Тестовый API вызван!")
