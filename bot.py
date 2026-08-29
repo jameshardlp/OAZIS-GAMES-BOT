@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
-# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ (ПОЛНОЕ!)
+# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ
 # ============================================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -101,7 +101,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА
+# 6. HTML СТРАНИЦА (ИСПРАВЛЕННАЯ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -340,12 +340,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     gameState.players = data.players || [];
                     updateUI();
                     debugLog('✅ Присоединился: ' + userName);
-                    var tg = window.Telegram.WebApp;
-                    tg.showPopup({{
-                        title: '✅ Присоединились!',
-                        message: 'Добро пожаловать, ' + userName + '!',
-                        buttons: [{{text: 'OK', type: 'default'}}]
-                    }});
+                    // Убираем showPopup, чтобы избежать ошибки WebAppMethodUnsupported
                 }} else {{
                     debugLog('❌ Ошибка присоединения: ' + (data.message || 'неизвестно'));
                 }}
@@ -1089,7 +1084,7 @@ async def cmd_stop_game(message: types.Message):
     await message.answer("⛔ Игра остановлена ведущим!")
 
 # ============================================
-# 10. INLINE-РЕЖИМ (ИСПРАВЛЕННЫЙ!)
+# 10. INLINE-РЕЖИМ
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
@@ -1101,11 +1096,10 @@ async def inline_query_handler(query: types.InlineQuery):
     print(f"📝 Запрос: '{query.query}'")
     print("=" * 60)
     
-    # Используем InlineQueryResultGame — это специальный тип для игр
-    # Он автоматически создаёт карточку с кнопкой "Play"
+    # Используем InlineQueryResultGame — специальный тип для игр
     result = types.InlineQueryResultGame(
         id="oasis_game",
-        game_short_name="oaziscaffee"  # Имя игры из BotFather
+        game_short_name="oaziscaffee"
     )
     
     await query.answer([result], cache_time=60)
@@ -1126,11 +1120,9 @@ async def game_callback(callback: types.CallbackQuery):
     print(f"🎮 Game Short Name: {callback.game_short_name}")
     print("=" * 60)
     
-    # Генерируем уникальный ID игры
     game_id = str(uuid.uuid4())[:8]
     print(f"🆕 Создан Game ID: {game_id}")
     
-    # Создаём игру в памяти
     games[game_id] = {
         'game_id': game_id,
         'chat_id': str(callback.from_user.id),
@@ -1146,11 +1138,9 @@ async def game_callback(callback: types.CallbackQuery):
     }
     print(f"✅ Игра создана")
     
-    # ТВОЙ URL игры — именно здесь ты передаёшь ссылку!
     game_url = f"{WEBAPP_URL}?game_id={game_id}"
     print(f"🔗 URL игры: {game_url}")
     
-    # Отвечаем Telegram с URL игры
     await callback.answer(url=game_url)
     
     print("✅ Ответ отправлен с URL игры!")
