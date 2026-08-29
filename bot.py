@@ -9,7 +9,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.enums import ChatType
-from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent
+from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, CallbackGame
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 from dotenv import load_dotenv
@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ============================================
-# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ
+# 2. НАСТРОЙКИ ЛОГИРОВАНИЯ (ПОЛНОЕ!)
 # ============================================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -28,8 +28,14 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 
+# Отдельный логгер для отладки inline-режима
+inline_logger = logging.getLogger("inline")
+inline_logger.setLevel(logging.DEBUG)
+
 print("=" * 60)
 print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
+print("=" * 60)
+print("📋 Логирование включено на уровень DEBUG")
 print("=" * 60)
 
 # ============================================
@@ -54,6 +60,7 @@ if not WEBAPP_URL:
 print(f"🔌 Порт: {PORT}")
 print(f"🤖 Токен: ✅ Загружен из .env")
 print(f"🌐 URL: {WEBAPP_URL}")
+print(f"🎮 Game Short Name: oaziscaffee")
 
 # ============================================
 # 4. ИНИЦИАЛИЗАЦИЯ
@@ -74,7 +81,7 @@ GAME_INVITE_TEXT = """🧟 **ЗОМБИ-АПОКАЛИПСИС!**
 👑 **Ведущий:** {host_name}
 👥 **Соберите от 4 до 6 игроков!**
 
-Нажми кнопку **«Присоединиться к игре»** чтобы начать!"""
+Нажми кнопку **«Играть»** чтобы присоединиться!"""
 
 RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 
@@ -147,10 +154,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
     
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // ============================================
-        // ПОЛНАЯ ЛОГИКА С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ
-        // ============================================
-        
         const API_BASE = '{WEBAPP_URL}';
         
         function debugLog(message) {{
@@ -881,8 +884,8 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Выбери карточку «Начать игру»\n"
-        "3️⃣ Нажми кнопку «Присоединиться к игре»\n"
+        "2️⃣ Выбери карточку «Кафе ОАЗИС»\n"
+        "3️⃣ Нажми кнопку «Play»\n"
         "4️⃣ Игра начнётся!\n\n"
         "📋 **Команды:**\n"
         "/oasis - Создать игру (в личном чате)\n"
@@ -1090,42 +1093,24 @@ async def cmd_stop_game(message: types.Message):
     await message.answer("⛔ Игра остановлена ведущим!")
 
 # ============================================
-# 10. INLINE-РЕЖИМ (@oazisgamesbot)
+# 10. INLINE-РЕЖИМ С ПОЛНЫМ ЛОГИРОВАНИЕМ
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
-    """Обработка @oazisgamesbot — показывает карточку-приглашение"""
+    """Обработка @oazisgamesbot с полным логированием"""
     
-    # Генерируем уникальный ID игры для кнопки
-    game_id = str(uuid.uuid4())[:8]
+    print("=" * 60)
+    print("📨 ПОЛУЧЕН INLINE-ЗАПРОС!")
+    print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
+    print(f"📝 Запрос: '{query.query}'")
+    print(f"📍 Chat ID: {query.from_user.id}")
+    print("=" * 60)
     
-    # Создаём игру
-    games[game_id] = {
-        'game_id': game_id,
-        'chat_id': str(query.from_user.id),
-        'players': [],
-        'status': 'waiting',
-        'round': 0,
-        'max_rounds': 5,
-        'host_id': str(query.from_user.id),
-        'host_name': query.from_user.first_name or query.from_user.username or 'Игрок',
-        'created_at': datetime.now().isoformat(),
-        'votes': {},
-        'eliminated': [],
-    }
-    
-    # Ссылка на игру с уникальным ID
-    game_url = f"{WEBAPP_URL}?game_id={game_id}"
-    
-    # Клавиатура для кнопки в сообщении
+    # Клавиатура с игрой (используем CallbackGame для inline-режима)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🎮 Присоединиться к игре",
-            web_app=WebAppInfo(url=game_url)
-        )],
-        [InlineKeyboardButton(
-            text="📖 Правила игры",
-            callback_data="rules_inline"
+            text="🎮 Играть",
+            callback_game=CallbackGame()
         )]
     ])
     
@@ -1144,16 +1129,57 @@ async def inline_query_handler(query: types.InlineQuery):
         thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
     )
     
+    print("📤 Отправка inline-результата...")
+    print(f"📦 Результат: {result.title}")
+    
     await query.answer([result], cache_time=60)
+    
+    print("✅ Inline-результат отправлен!")
+    print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК INLINE-КНОПОК
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (ПОЛНОЕ ЛОГИРОВАНИЕ)
 # ============================================
-@dp.callback_query(lambda c: c.data == "rules_inline")
-async def inline_rules_handler(callback: types.CallbackQuery):
-    """Показать правила при нажатии на кнопку 'Правила игры' в инлайн-режиме"""
-    await callback.answer()
-    await callback.message.answer(RULES_TEXT, parse_mode="Markdown")
+@dp.callback_query(lambda c: c.game_short_name is not None)
+async def game_callback(callback: types.CallbackQuery):
+    """Обработка нажатия на кнопку Play в игре"""
+    
+    print("=" * 60)
+    print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
+    print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
+    print(f"🎮 Game Short Name: {callback.game_short_name}")
+    print(f"📝 Data: {callback.data}")
+    print("=" * 60)
+    
+    # Генерируем уникальный ID игры
+    game_id = str(uuid.uuid4())[:8]
+    print(f"🆕 Создан Game ID: {game_id}")
+    
+    # Создаём игру в памяти
+    games[game_id] = {
+        'game_id': game_id,
+        'chat_id': str(callback.from_user.id),
+        'players': [],
+        'status': 'waiting',
+        'round': 0,
+        'max_rounds': 5,
+        'host_id': str(callback.from_user.id),
+        'host_name': callback.from_user.first_name or callback.from_user.username or 'Игрок',
+        'created_at': datetime.now().isoformat(),
+        'votes': {},
+        'eliminated': [],
+    }
+    print(f"✅ Игра создана: {games[game_id]}")
+    
+    # ТВОЙ URL игры — именно здесь ты передаёшь ссылку!
+    game_url = f"{WEBAPP_URL}?game_id={game_id}"
+    print(f"🔗 URL игры: {game_url}")
+    
+    # Отвечаем Telegram с URL игры
+    await callback.answer(url=game_url)
+    
+    print("✅ Ответ отправлен с URL игры!")
+    print("=" * 60)
 
 # ============================================
 # 12. ГЕНЕРАЦИЯ КАРТ
@@ -1233,6 +1259,8 @@ async def api_get_state(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
+        print(f"🔍 Поиск игры: {game_id}")
+        
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -1240,18 +1268,23 @@ async def api_get_state(request):
                 break
         
         if not game:
+            print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         
-        return web.json_response({
+        response_data = {
             'game_id': game['game_id'],
             'status': game['status'],
             'players': game['players'],
             'round': game['round'],
             'max_rounds': game['max_rounds'],
             'is_host': str(game['host_id']) == str(player_id) if player else False,
-        })
+        }
+        
+        print(f"📤 Ответ: {response_data}")
+        
+        return web.json_response(response_data)
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1264,6 +1297,9 @@ async def api_join_game(request):
         player_name = data.get('player_name')
         username = data.get('username', '')
         game_id = data.get('game_id')
+        
+        print(f"👤 Игрок: {player_name} (ID: {player_id})")
+        print(f"🎮 Игра: {game_id}")
         
         game = None
         for g in games.values():
@@ -1296,6 +1332,8 @@ async def api_join_game(request):
             'revealed': [],
         }
         game['players'].append(player)
+        
+        print(f"✅ Игрок присоединился: {player}")
         
         return web.json_response({
             'status': 'success',
