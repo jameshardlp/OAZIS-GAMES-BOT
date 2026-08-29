@@ -9,7 +9,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.enums import ChatType
-from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, CallbackGame
+from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultGame, InputTextMessageContent, CallbackGame
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 from dotenv import load_dotenv
@@ -27,10 +27,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-
-# Отдельный логгер для отладки inline-режима
-inline_logger = logging.getLogger("inline")
-inline_logger.setLevel(logging.DEBUG)
 
 print("=" * 60)
 print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
@@ -884,7 +880,7 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Выбери карточку «Кафе ОАЗИС»\n"
+        "2️⃣ Выбери карточку игры\n"
         "3️⃣ Нажми кнопку «Play»\n"
         "4️⃣ Игра начнётся!\n\n"
         "📋 **Команды:**\n"
@@ -1093,52 +1089,32 @@ async def cmd_stop_game(message: types.Message):
     await message.answer("⛔ Игра остановлена ведущим!")
 
 # ============================================
-# 10. INLINE-РЕЖИМ С ПОЛНЫМ ЛОГИРОВАНИЕМ
+# 10. INLINE-РЕЖИМ (ИСПРАВЛЕННЫЙ!)
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
-    """Обработка @oazisgamesbot с полным логированием"""
+    """Обработка @oazisgamesbot — карточка игры через InlineQueryResultGame"""
     
     print("=" * 60)
     print("📨 ПОЛУЧЕН INLINE-ЗАПРОС!")
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
     print(f"📝 Запрос: '{query.query}'")
-    print(f"📍 Chat ID: {query.from_user.id}")
     print("=" * 60)
     
-    # Клавиатура с игрой (используем CallbackGame для inline-режима)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🎮 Играть",
-            callback_game=CallbackGame()
-        )]
-    ])
-    
-    # Карточка, которая появится при выборе @oazisgamesbot
-    result = InlineQueryResultArticle(
+    # Используем InlineQueryResultGame — это специальный тип для игр
+    # Он автоматически создаёт карточку с кнопкой "Play"
+    result = types.InlineQueryResultGame(
         id="oasis_game",
-        title="🎮 Кафе ОАЗИС — зомби-апокалипсис",
-        description="Нажми, чтобы начать игру!",
-        reply_markup=keyboard,
-        input_message_content=InputTextMessageContent(
-            message_text=GAME_INVITE_TEXT.format(
-                host_name=query.from_user.first_name or query.from_user.username or 'Игрок'
-            ),
-            parse_mode="Markdown"
-        ),
-        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
+        game_short_name="oaziscaffee"  # Имя игры из BotFather
     )
-    
-    print("📤 Отправка inline-результата...")
-    print(f"📦 Результат: {result.title}")
     
     await query.answer([result], cache_time=60)
     
-    print("✅ Inline-результат отправлен!")
+    print("✅ Inline-результат (игра) отправлен!")
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (ПОЛНОЕ ЛОГИРОВАНИЕ)
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1148,7 +1124,6 @@ async def game_callback(callback: types.CallbackQuery):
     print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
     print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
     print(f"🎮 Game Short Name: {callback.game_short_name}")
-    print(f"📝 Data: {callback.data}")
     print("=" * 60)
     
     # Генерируем уникальный ID игры
@@ -1169,7 +1144,7 @@ async def game_callback(callback: types.CallbackQuery):
         'votes': {},
         'eliminated': [],
     }
-    print(f"✅ Игра создана: {games[game_id]}")
+    print(f"✅ Игра создана")
     
     # ТВОЙ URL игры — именно здесь ты передаёшь ссылку!
     game_url = f"{WEBAPP_URL}?game_id={game_id}"
