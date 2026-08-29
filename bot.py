@@ -174,6 +174,32 @@ HTML_PAGE = f'''<!DOCTYPE html>
             isHost: false,
         }};
 
+        // Функция для получения ID пользователя из различных источников
+        function getUserId() {{
+            var tg = window.Telegram.WebApp;
+            
+            // Способ 1: через initDataUnsafe
+            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {{
+                return tg.initDataUnsafe.user.id;
+            }}
+            
+            // Способ 2: через hash-параметры
+            try {{
+                var urlParams = new URLSearchParams(window.location.hash.substring(1));
+                var tgWebAppData = urlParams.get('tgWebAppData');
+                if (tgWebAppData) {{
+                    var parsed = JSON.parse(decodeURIComponent(tgWebAppData));
+                    if (parsed && parsed.user && parsed.user.id) {{
+                        return parsed.user.id;
+                    }}
+                }}
+            }} catch(e) {{
+                debugLog('⚠️ Не удалось распарсить tgWebAppData');
+            }}
+            
+            return null;
+        }}
+
         document.addEventListener('DOMContentLoaded', function() {{
             debugLog('✅ JS скрипт загружен!');
             
@@ -190,10 +216,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             debugLog('🚀 DOM загружен!');
             
-            const initData = window.Telegram.WebApp.initDataUnsafe;
-            if (initData && initData.user) {{
-                gameState.playerId = initData.user.id;
-                var userName = initData.user.first_name || 'Игрок';
+            // Получаем ID пользователя
+            var userId = getUserId();
+            if (userId) {{
+                gameState.playerId = userId;
+                var userName = tg.initDataUnsafe?.user?.first_name || 'Игрок';
                 debugLog('👤 Игрок: ' + userName + ' (ID: ' + gameState.playerId + ')');
             }} else {{
                 debugLog('⚠️ Нет данных пользователя');
@@ -340,7 +367,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     gameState.players = data.players || [];
                     updateUI();
                     debugLog('✅ Присоединился: ' + userName);
-                    // Убираем showPopup, чтобы избежать ошибки WebAppMethodUnsupported
                 }} else {{
                     debugLog('❌ Ошибка присоединения: ' + (data.message || 'неизвестно'));
                 }}
@@ -1096,7 +1122,6 @@ async def inline_query_handler(query: types.InlineQuery):
     print(f"📝 Запрос: '{query.query}'")
     print("=" * 60)
     
-    # Используем InlineQueryResultGame — специальный тип для игр
     result = types.InlineQueryResultGame(
         id="oasis_game",
         game_short_name="oaziscaffee"
