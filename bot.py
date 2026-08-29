@@ -9,7 +9,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.enums import ChatType
-from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, CallbackGame
+from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 from dotenv import load_dotenv
@@ -37,7 +37,6 @@ print("=" * 60)
 # ============================================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
-GAME_SHORT_NAME = "oaziscaffee"
 PORT = int(os.getenv("PORT", 8082))
 
 if not BOT_TOKEN:
@@ -55,7 +54,6 @@ if not WEBAPP_URL:
 print(f"🔌 Порт: {PORT}")
 print(f"🤖 Токен: ✅ Загружен из .env")
 print(f"🌐 URL: {WEBAPP_URL}")
-print(f"🎮 Game Short Name: {GAME_SHORT_NAME}")
 
 # ============================================
 # 4. ИНИЦИАЛИЗАЦИЯ
@@ -76,7 +74,7 @@ GAME_INVITE_TEXT = """🧟 **ЗОМБИ-АПОКАЛИПСИС!**
 👑 **Ведущий:** {host_name}
 👥 **Соберите от 4 до 6 игроков!**
 
-Нажми кнопку **«Играть»** чтобы присоединиться!"""
+Нажми кнопку **«Присоединиться к игре»** чтобы начать!"""
 
 RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 
@@ -149,6 +147,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
     
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
+        // ============================================
+        // ПОЛНАЯ ЛОГИКА С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ
+        // ============================================
+        
         const API_BASE = '{WEBAPP_URL}';
         
         function debugLog(message) {{
@@ -879,8 +881,9 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Нажми кнопку «Начать игру»\n"
-        "3️⃣ Присоединяйся к игре!\n\n"
+        "2️⃣ Выбери карточку «Начать игру»\n"
+        "3️⃣ Нажми кнопку «Присоединиться к игре»\n"
+        "4️⃣ Игра начнётся!\n\n"
         "📋 **Команды:**\n"
         "/oasis - Создать игру (в личном чате)\n"
         "/status - Показать статус игры\n"
@@ -1091,92 +1094,66 @@ async def cmd_stop_game(message: types.Message):
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
-    """Обработка @oazisgamesbot в любом чате"""
+    """Обработка @oazisgamesbot — показывает карточку-приглашение"""
     
-    results = []
-    
-    # --- 1. КНОПКА "НАЧАТЬ ИГРУ" (через Telegram Game) ---
-    # Клавиатура с игрой
-    keyboard_start = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🎮 Играть",
-            callback_game=CallbackGame()
-        )]
-    ])
-    
-    # Результат 1: Начать игру (используем InputTextMessageContent с игрой)
-    result_start = InlineQueryResultArticle(
-        id="start_game",
-        title="🎮 Начать игру",
-        description="Создать новую игру и пригласить друзей!",
-        reply_markup=keyboard_start,
-        input_message_content=InputTextMessageContent(
-            message_text=GAME_INVITE_TEXT.format(host_name=query.from_user.first_name or query.from_user.username or 'Игрок'),
-            parse_mode="Markdown"
-        ),
-        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
-    )
-    
-    # --- 2. КНОПКА "ПРАВИЛА" ---
-    # Для правил используем кнопку с URL или просто текст
-    keyboard_rules = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="📖 Читать правила",
-            url=f"{WEBAPP_URL}/rules"
-        )]
-    ])
-    
-    # Результат 2: Правила
-    result_rules = InlineQueryResultArticle(
-        id="rules",
-        title="📖 Правила игры",
-        description="Узнай, как играть в Кафе ОАЗИС!",
-        reply_markup=keyboard_rules,
-        input_message_content=InputTextMessageContent(
-            message_text=RULES_TEXT,
-            parse_mode="Markdown"
-        ),
-        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
-    )
-    
-    results.append(result_start)
-    results.append(result_rules)
-    
-    await query.answer(results, cache_time=60)
-
-# ============================================
-# 11. ОБРАБОТКА ИГРЫ (Telegram Games)
-# ============================================
-@dp.callback_query(lambda c: c.game_short_name is not None or c.data == "start_game")
-async def game_callback(callback: types.CallbackQuery):
-    """Обработка нажатия на кнопку Play в игре"""
-    
-    # Игровой URL — перенаправляем на Mini App с уникальным ID
+    # Генерируем уникальный ID игры для кнопки
     game_id = str(uuid.uuid4())[:8]
     
     # Создаём игру
     games[game_id] = {
         'game_id': game_id,
-        'chat_id': str(callback.from_user.id),
+        'chat_id': str(query.from_user.id),
         'players': [],
         'status': 'waiting',
         'round': 0,
         'max_rounds': 5,
-        'host_id': str(callback.from_user.id),
-        'host_name': callback.from_user.first_name or callback.from_user.username or 'Игрок',
+        'host_id': str(query.from_user.id),
+        'host_name': query.from_user.first_name or query.from_user.username or 'Игрок',
         'created_at': datetime.now().isoformat(),
         'votes': {},
         'eliminated': [],
     }
     
+    # Ссылка на игру с уникальным ID
     game_url = f"{WEBAPP_URL}?game_id={game_id}"
     
-    # Если это игра — отвечаем с URL
-    if callback.game_short_name is not None:
-        await callback.answer(url=game_url)
-    else:
-        # Если это inline кнопка — тоже открываем игру
-        await callback.answer(url=game_url)
+    # Клавиатура для кнопки в сообщении
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🎮 Присоединиться к игре",
+            web_app=WebAppInfo(url=game_url)
+        )],
+        [InlineKeyboardButton(
+            text="📖 Правила игры",
+            callback_data="rules_inline"
+        )]
+    ])
+    
+    # Карточка, которая появится при выборе @oazisgamesbot
+    result = InlineQueryResultArticle(
+        id="oasis_game",
+        title="🎮 Кафе ОАЗИС — зомби-апокалипсис",
+        description="Нажми, чтобы начать игру!",
+        reply_markup=keyboard,
+        input_message_content=InputTextMessageContent(
+            message_text=GAME_INVITE_TEXT.format(
+                host_name=query.from_user.first_name or query.from_user.username or 'Игрок'
+            ),
+            parse_mode="Markdown"
+        ),
+        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
+    )
+    
+    await query.answer([result], cache_time=60)
+
+# ============================================
+# 11. ОБРАБОТЧИК INLINE-КНОПОК
+# ============================================
+@dp.callback_query(lambda c: c.data == "rules_inline")
+async def inline_rules_handler(callback: types.CallbackQuery):
+    """Показать правила при нажатии на кнопку 'Правила игры' в инлайн-режиме"""
+    await callback.answer()
+    await callback.message.answer(RULES_TEXT, parse_mode="Markdown")
 
 # ============================================
 # 12. ГЕНЕРАЦИЯ КАРТ
