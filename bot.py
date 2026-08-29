@@ -101,7 +101,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА
+# 6. HTML СТРАНИЦА (С ПЕРЕДАЧЕЙ ИМЕНИ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -193,7 +193,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var urlParams = new URLSearchParams(window.location.search);
             gameState.gameId = urlParams.get('game_id');
             var userIdFromUrl = urlParams.get('user_id');
+            var userNameFromUrl = urlParams.get('user_name');
             
+            // ★★★ ПОЛУЧАЕМ ID ИЗ URL ★★★
             if (userIdFromUrl) {{
                 gameState.playerId = parseInt(userIdFromUrl);
                 debugLog('👤 ID из URL: ' + gameState.playerId);
@@ -225,6 +227,23 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }}
             }}
             
+            // ★★★ ПОЛУЧАЕМ ИМЯ ИЗ URL ★★★
+            var userName = 'Игрок';
+            if (userNameFromUrl) {{
+                userName = decodeURIComponent(userNameFromUrl);
+                debugLog('👤 Имя из URL: ' + userName);
+            }} else {{
+                try {{
+                    var initData = window.Telegram.WebApp.initDataUnsafe;
+                    if (initData && initData.user) {{
+                        userName = initData.user.first_name || 'Игрок';
+                        debugLog('👤 Имя из initData: ' + userName);
+                    }}
+                }} catch(e) {{
+                    debugLog('⚠️ Не удалось получить имя из initData');
+                }}
+            }}
+            
             if (!gameState.playerId) {{
                 debugLog('⚠️ Нет данных пользователя!');
             }}
@@ -235,6 +254,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('❌ Нет Game ID!');
                 return;
             }}
+            
+            // Сохраняем имя для отправки на сервер
+            gameState.userName = userName;
+            debugLog('👤 Итоговое имя: ' + userName);
             
             connectToGame();
             
@@ -343,11 +366,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
 
         async function joinGame() {{
             try {{
-                var initData = window.Telegram.WebApp.initDataUnsafe;
-                var user = initData?.user;
-                var userName = user?.first_name || 'Игрок';
-                var username = user?.username || '';
-                
+                var userName = gameState.userName || 'Игрок';
                 debugLog('🔄 Присоединение: ' + userName);
                 
                 var response = await fetch(API_BASE + '/api/game/join', {{
@@ -356,7 +375,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
                         player_name: userName,
-                        username: username,
+                        username: '',
                         game_id: gameState.gameId,
                     }})
                 }});
@@ -1134,7 +1153,7 @@ async def inline_query_handler(query: types.InlineQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (ИСПРАВЛЕННЫЙ)
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ПЕРЕДАЧЕЙ ИМЕНИ)
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1148,6 +1167,7 @@ async def game_callback(callback: types.CallbackQuery):
     
     user_id = callback.from_user.id
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
+    user_name_encoded = user_name.replace(' ', '%20')
     
     # Определяем ключ для игры
     if callback.message and callback.message.chat:
@@ -1181,9 +1201,10 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # Формируем URL
-    game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}"
+    # ★★★ ПЕРЕДАЁМ ID И ИМЯ В URL ★★★
+    game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
+    print(f"👤 Имя в URL: {user_name}")
     
     await callback.answer(url=game_url)
     print("✅ Ответ отправлен с URL игры!")
