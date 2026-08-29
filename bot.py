@@ -37,6 +37,7 @@ print("=" * 60)
 # ============================================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBAPP_URL = os.getenv("WEBAPP_URL")
+GAME_SHORT_NAME = "oaziscaffee"
 PORT = int(os.getenv("PORT", 8082))
 
 if not BOT_TOKEN:
@@ -54,6 +55,7 @@ if not WEBAPP_URL:
 print(f"🔌 Порт: {PORT}")
 print(f"🤖 Токен: ✅ Загружен из .env")
 print(f"🌐 URL: {WEBAPP_URL}")
+print(f"🎮 Game Short Name: {GAME_SHORT_NAME}")
 
 # ============================================
 # 4. ИНИЦИАЛИЗАЦИЯ
@@ -147,10 +149,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
     
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // ============================================
-        // ПОЛНАЯ ЛОГИКА С АВТОМАТИЧЕСКИМ ПРИСОЕДИНЕНИЕМ
-        // ============================================
-        
         const API_BASE = '{WEBAPP_URL}';
         
         function debugLog(message) {{
@@ -1097,37 +1095,16 @@ async def inline_query_handler(query: types.InlineQuery):
     
     results = []
     
-    # --- 1. КНОПКА "НАЧАТЬ ИГРУ" ---
-    # Генерируем уникальный ID игры
-    game_id = str(uuid.uuid4())[:8]
-    
-    # Создаём игру
-    games[game_id] = {
-        'game_id': game_id,
-        'chat_id': str(query.from_user.id),
-        'players': [],
-        'status': 'waiting',
-        'round': 0,
-        'max_rounds': 5,
-        'host_id': str(query.from_user.id),
-        'host_name': query.from_user.first_name or query.from_user.username or 'Игрок',
-        'created_at': datetime.now().isoformat(),
-        'votes': {},
-        'eliminated': [],
-    }
-    
-    # Ссылка на игру
-    game_url = f"{WEBAPP_URL}?game_id={game_id}"
-    
-    # Клавиатура для кнопки "Начать игру"
+    # --- 1. КНОПКА "НАЧАТЬ ИГРУ" (через Telegram Game) ---
+    # Клавиатура с игрой
     keyboard_start = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text="🎮 Начать игру",
-            web_app=WebAppInfo(url=game_url)
+            text="🎮 Играть",
+            callback_game=CallbackGame()
         )]
     ])
     
-    # Результат 1: Начать игру
+    # Результат 1: Начать игру (используем InputTextMessageContent с игрой)
     result_start = InlineQueryResultArticle(
         id="start_game",
         title="🎮 Начать игру",
@@ -1141,11 +1118,11 @@ async def inline_query_handler(query: types.InlineQuery):
     )
     
     # --- 2. КНОПКА "ПРАВИЛА" ---
-    # Клавиатура для кнопки "Правила" (открывается как WebApp, но показывает правила)
+    # Для правил используем кнопку с URL или просто текст
     keyboard_rules = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="📖 Читать правила",
-            web_app=WebAppInfo(url=f"{WEBAPP_URL}/rules")
+            url=f"{WEBAPP_URL}/rules"
         )]
     ])
     
@@ -1170,7 +1147,7 @@ async def inline_query_handler(query: types.InlineQuery):
 # ============================================
 # 11. ОБРАБОТКА ИГРЫ (Telegram Games)
 # ============================================
-@dp.callback_query(lambda c: c.game_short_name is not None)
+@dp.callback_query(lambda c: c.game_short_name is not None or c.data == "start_game")
 async def game_callback(callback: types.CallbackQuery):
     """Обработка нажатия на кнопку Play в игре"""
     
@@ -1194,7 +1171,12 @@ async def game_callback(callback: types.CallbackQuery):
     
     game_url = f"{WEBAPP_URL}?game_id={game_id}"
     
-    await callback.answer(url=game_url)
+    # Если это игра — отвечаем с URL
+    if callback.game_short_name is not None:
+        await callback.answer(url=game_url)
+    else:
+        # Если это inline кнопка — тоже открываем игру
+        await callback.answer(url=game_url)
 
 # ============================================
 # 12. ГЕНЕРАЦИЯ КАРТ
