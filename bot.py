@@ -64,7 +64,7 @@ print(f"🎮 Game Short Name: oaziscaffee")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 games = {}
-chat_games = {}  # ★★★ Храним соответствие chat_id -> game_id ★★★
+user_game_map = {}  # ★★★ user_id -> game_id ★★★
 CARDS = None
 
 # ============================================
@@ -307,7 +307,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 var data = await response.json();
                 debugLog('📦 Ответ: ' + JSON.stringify(data));
                 
-                if (data.game_id) {{
+                if (data.game_id && data.status) {{
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
                     gameState.isHost = data.is_host || false;
@@ -320,7 +320,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     }});
                     debugLog('👤 В игре? ' + playerExists);
                     
-                    if (!playerExists) {{
+                    if (!playerExists && gameState.status === 'waiting') {{
                         debugLog('🔄 Игрок не в игре! Присоединяемся...');
                         await joinGame();
                         
@@ -342,11 +342,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
                             debugLog('👥 Обновлённое количество игроков: ' + gameState.players.length);
                             debugLog('📊 Обновлённый статус: ' + gameState.status);
                         }}
-                    }} else {{
+                    }} else if (playerExists) {{
                         debugLog('✅ Игрок уже в игре');
-                        if (!gameState.isHost) {{
-                            debugLog('⚠️ Игрок в игре, но не ведущий.');
-                        }}
+                    }} else if (gameState.status !== 'waiting') {{
+                        debugLog('⚠️ Игра уже началась, нельзя присоединиться');
                     }}
                     
                     updateUI();
@@ -919,11 +918,9 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Выбери карточку игры\n"
-        "3️⃣ Нажми кнопку «Play»\n"
-        "4️⃣ Игра начнётся!\n\n"
+        "2️⃣ Нажми кнопку «Play»\n"
+        "3️⃣ Игра начнётся!\n\n"
         "📋 **Команды:**\n"
-        "/oasis - Создать игру (в личном чате)\n"
         "/status - Показать статус игры\n"
         "/host - Назначить ведущего\n"
         "/whohost - Показать ведущего\n"
@@ -932,72 +929,21 @@ async def cmd_start(message: types.Message):
         parse_mode="Markdown"
     )
 
-@dp.message(Command("oasis"))
-async def cmd_oasis(message: types.Message):
-    chat_id = str(message.chat.id)
-    
-    if chat_id in chat_games:
-        game_id = chat_games[chat_id]
-        if game_id in games:
-            await message.answer("⚠️ Игра уже идёт! Используй /stop чтобы остановить.")
-            return
-        else:
-            del chat_games[chat_id]
-    
-    game_id = str(uuid.uuid4())[:8]
-    games[game_id] = {
-        'game_id': game_id,
-        'chat_id': chat_id,
-        'players': [],
-        'status': 'waiting',
-        'round': 0,
-        'max_rounds': 5,
-        'host_id': str(message.from_user.id),
-        'host_name': message.from_user.first_name or message.from_user.username or 'Ведущий',
-        'created_at': datetime.now().isoformat(),
-        'votes': {},
-        'eliminated': [],
-    }
-    chat_games[chat_id] = game_id
-    
-    webapp_url = f"{WEBAPP_URL}?game_id={game_id}"
-    
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(
-            text="🔫 Присоединиться к игре",
-            web_app=WebAppInfo(url=webapp_url)
-        )]
-    ])
-    
-    await message.answer(
-        f"🧟 **ЗОМБИ-АПОКАЛИПСИС!**\n\n"
-        f"Группа выживших нашла убежище в кафе 'ОАЗИС'.\n"
-        f"Мест хватит только на половину из вас.\n\n"
-        f"👑 **Ведущий:** {games[game_id]['host_name']}\n"
-        f"👥 Соберите от 4 до 6 игроков и нажмите кнопку.\n\n"
-        f"📋 Или просто напиши @oazisgamesbot в любом чате!",
-        parse_mode="Markdown",
-        reply_markup=keyboard
-    )
-
-@dp.message(Command("rules"))
-async def cmd_rules(message: types.Message):
-    await message.answer(RULES_TEXT, parse_mode="Markdown")
-
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
     chat_id = str(message.chat.id)
     
-    if chat_id not in chat_games:
-        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
+    # Ищем игру по chat_id
+    game = None
+    for g in games.values():
+        if g['chat_id'] == chat_id:
+            game = g
+            break
+    
+    if not game:
+        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
         return
     
-    game_id = chat_games[chat_id]
-    if game_id not in games:
-        await message.answer("❌ Игра не найдена. Создай новую через /oasis")
-        return
-    
-    game = games[game_id]
     await message.answer(
         f"📊 **Статус игры:**\n"
         f"🎮 Game ID: `{game['game_id']}`\n"
@@ -1012,16 +958,15 @@ async def cmd_status(message: types.Message):
 async def cmd_host(message: types.Message):
     chat_id = str(message.chat.id)
     
-    if chat_id not in chat_games:
-        await message.answer("❌ Нет активной игры. Создай игру через /oasis")
-        return
+    game = None
+    for g in games.values():
+        if g['chat_id'] == chat_id:
+            game = g
+            break
     
-    game_id = chat_games[chat_id]
-    if game_id not in games:
-        await message.answer("❌ Игра не найдена. Создай новую через /oasis")
+    if not game:
+        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
         return
-    
-    game = games[game_id]
     
     if str(message.from_user.id) != str(game['host_id']):
         await message.answer("⛔ Только текущий ведущий может назначить нового!")
@@ -1107,16 +1052,16 @@ async def cmd_host(message: types.Message):
 async def cmd_whohost(message: types.Message):
     chat_id = str(message.chat.id)
     
-    if chat_id not in chat_games:
+    game = None
+    for g in games.values():
+        if g['chat_id'] == chat_id:
+            game = g
+            break
+    
+    if not game:
         await message.answer("❌ Нет активной игры")
         return
     
-    game_id = chat_games[chat_id]
-    if game_id not in games:
-        await message.answer("❌ Игра не найдена")
-        return
-    
-    game = games[game_id]
     host_name = game.get('host_name', 'Неизвестно')
     host_id = game.get('host_id', 'Нет ID')
     
@@ -1139,97 +1084,59 @@ async def cmd_whohost(message: types.Message):
 async def cmd_stop_game(message: types.Message):
     chat_id = str(message.chat.id)
     
-    if chat_id not in chat_games:
+    game = None
+    game_key = None
+    for key, g in games.items():
+        if g['chat_id'] == chat_id:
+            game = g
+            game_key = key
+            break
+    
+    if not game:
         await message.answer("❌ Нет активной игры")
         return
-    
-    game_id = chat_games[chat_id]
-    if game_id not in games:
-        await message.answer("❌ Игра не найдена")
-        return
-    
-    game = games[game_id]
     
     if str(message.from_user.id) != str(game['host_id']):
         await message.answer("⛔ Только ведущий может остановить игру!")
         return
     
-    del games[game_id]
-    del chat_games[chat_id]
+    del games[game_key]
     await message.answer("⛔ Игра остановлена ведущим!")
 
+@dp.message(Command("rules"))
+async def cmd_rules(message: types.Message):
+    await message.answer(RULES_TEXT, parse_mode="Markdown")
+
 # ============================================
-# 10. INLINE-РЕЖИМ
+# 10. INLINE-РЕЖИМ (СОЗДАЁТ ИГРУ)
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
-    """Обработка @oazisgamesbot — карточка игры через InlineQueryResultGame"""
+    """Обработка @oazisgamesbot — карточка игры"""
     
     print("=" * 60)
     print("📨 ПОЛУЧЕН INLINE-ЗАПРОС!")
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
-    print(f"📝 Запрос: '{query.query}'")
     print("=" * 60)
     
-    result = types.InlineQueryResultGame(
-        id="oasis_game",
-        game_short_name="oaziscaffee"
-    )
+    user_id = query.from_user.id
+    user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
     
-    await query.answer([result], cache_time=60)
+    # ★★★ СОЗДАЁМ ИГРУ ★★★
+    chat_id = str(user_id)  # Для inline используем user_id как chat_id
+    game_id = str(uuid.uuid4())[:8]
     
-    print("✅ Inline-результат (игра) отправлен!")
-    print("=" * 60)
-
-# ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ОБЩИМ game_id ДЛЯ ВСЕХ)
-# ============================================
-@dp.callback_query(lambda c: c.game_short_name is not None)
-async def game_callback(callback: types.CallbackQuery):
-    """Обработка нажатия на кнопку Play в игре"""
+    # Проверяем, есть ли уже игра для этого пользователя/чата
+    existing_game = None
+    for g in games.values():
+        if g['chat_id'] == chat_id:
+            existing_game = g
+            break
     
-    print("=" * 60)
-    print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
-    print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
-    print(f"🎮 Game Short Name: {callback.game_short_name}")
-    print("=" * 60)
-    
-    user_id = callback.from_user.id
-    user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
-    user_name_encoded = user_name.replace(' ', '%20')
-    
-    # ★★★ ОПРЕДЕЛЯЕМ chat_id ★★★
-    if callback.message and callback.message.chat:
-        chat_id = str(callback.message.chat.id)
-        print(f"💬 Chat ID: {chat_id}")
+    if existing_game:
+        game_id = existing_game['game_id']
+        print(f"✅ Найдена существующая игра: {game_id}")
     else:
-        chat_id = str(user_id)
-        print(f"💬 Используем user_id как chat_id: {chat_id}")
-    
-    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ДЛЯ ЭТОГО ЧАТА ★★★
-    if chat_id in chat_games:
-        game_id = chat_games[chat_id]
-        print(f"✅ Найден существующий game_id: {game_id} для чата {chat_id}")
-        
-        if game_id not in games:
-            print(f"⚠️ Игра {game_id} не найдена в памяти, создаём заново")
-            games[game_id] = {
-                'game_id': game_id,
-                'chat_id': chat_id,
-                'players': [],
-                'status': 'waiting',
-                'round': 0,
-                'max_rounds': 5,
-                'host_id': str(user_id),
-                'host_name': user_name,
-                'created_at': datetime.now().isoformat(),
-                'votes': {},
-                'eliminated': [],
-            }
-    else:
-        game_id = str(uuid.uuid4())[:8]
-        print(f"🆕 Создаём новую игру: {game_id} для чата {chat_id}")
-        
         games[game_id] = {
             'game_id': game_id,
             'chat_id': chat_id,
@@ -1243,13 +1150,67 @@ async def game_callback(callback: types.CallbackQuery):
             'votes': {},
             'eliminated': [],
         }
-        chat_games[chat_id] = game_id
-        print(f"✅ Игра создана: {games[game_id]}")
+        print(f"🆕 Создана новая игра: {game_id}")
     
-    # ★★★ ПЕРЕДАЁМ game_id В URL ★★★
+    # ★★★ КАРТОЧКА С КНОПКОЙ PLAY ★★★
+    result = types.InlineQueryResultGame(
+        id="oasis_game",
+        game_short_name="oaziscaffee"
+    )
+    
+    await query.answer([result], cache_time=60)
+    
+    print("✅ Inline-результат отправлен!")
+    print("=" * 60)
+
+# ============================================
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
+# ============================================
+@dp.callback_query(lambda c: c.game_short_name is not None)
+async def game_callback(callback: types.CallbackQuery):
+    """При нажатии на Play — передаём ссылку с game_id"""
+    
+    print("=" * 60)
+    print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
+    print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
+    print("=" * 60)
+    
+    user_id = callback.from_user.id
+    user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
+    user_name_encoded = user_name.replace(' ', '%20')
+    
+    # ★★★ ИЩЕМ ИГРУ ★★★
+    chat_id = str(user_id)
+    game = None
+    game_id = None
+    
+    for g in games.values():
+        if g['chat_id'] == chat_id:
+            game = g
+            game_id = g['game_id']
+            break
+    
+    if not game:
+        # Если игра не найдена — создаём
+        game_id = str(uuid.uuid4())[:8]
+        games[game_id] = {
+            'game_id': game_id,
+            'chat_id': chat_id,
+            'players': [],
+            'status': 'waiting',
+            'round': 0,
+            'max_rounds': 5,
+            'host_id': str(user_id),
+            'host_name': user_name,
+            'created_at': datetime.now().isoformat(),
+            'votes': {},
+            'eliminated': [],
+        }
+        print(f"🆕 Создана новая игра: {game_id}")
+    
+    # ★★★ ПЕРЕДАЁМ URL С game_id ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
-    print(f"👤 Имя в URL: {user_name}")
     
     await callback.answer(url=game_url)
     print("✅ Ответ отправлен с URL игры!")
