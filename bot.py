@@ -174,32 +174,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             isHost: false,
         }};
 
-        // Функция для получения ID пользователя из различных источников
-        function getUserId() {{
-            var tg = window.Telegram.WebApp;
-            
-            // Способ 1: через initDataUnsafe
-            if (tg && tg.initDataUnsafe && tg.initDataUnsafe.user) {{
-                return tg.initDataUnsafe.user.id;
-            }}
-            
-            // Способ 2: через hash-параметры
-            try {{
-                var urlParams = new URLSearchParams(window.location.hash.substring(1));
-                var tgWebAppData = urlParams.get('tgWebAppData');
-                if (tgWebAppData) {{
-                    var parsed = JSON.parse(decodeURIComponent(tgWebAppData));
-                    if (parsed && parsed.user && parsed.user.id) {{
-                        return parsed.user.id;
-                    }}
-                }}
-            }} catch(e) {{
-                debugLog('⚠️ Не удалось распарсить tgWebAppData');
-            }}
-            
-            return null;
-        }}
-
         document.addEventListener('DOMContentLoaded', function() {{
             debugLog('✅ JS скрипт загружен!');
             
@@ -216,18 +190,48 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             debugLog('🚀 DOM загружен!');
             
-            // Получаем ID пользователя
-            var userId = getUserId();
-            if (userId) {{
-                gameState.playerId = userId;
-                var userName = tg.initDataUnsafe?.user?.first_name || 'Игрок';
-                debugLog('👤 Игрок: ' + userName + ' (ID: ' + gameState.playerId + ')');
-            }} else {{
-                debugLog('⚠️ Нет данных пользователя');
-            }}
-            
+            // ★★★ ПОЛУЧАЕМ ID ИЗ URL ★★★
             var urlParams = new URLSearchParams(window.location.search);
             gameState.gameId = urlParams.get('game_id');
+            var userIdFromUrl = urlParams.get('user_id');
+            
+            if (userIdFromUrl) {{
+                gameState.playerId = parseInt(userIdFromUrl);
+                debugLog('👤 ID из URL: ' + gameState.playerId);
+            }} else {{
+                // Пробуем получить через initDataUnsafe
+                try {{
+                    var initData = window.Telegram.WebApp.initDataUnsafe;
+                    if (initData && initData.user) {{
+                        gameState.playerId = initData.user.id;
+                        debugLog('👤 ID из initData: ' + gameState.playerId);
+                    }}
+                }} catch(e) {{
+                    debugLog('⚠️ Не удалось получить ID из initData');
+                }}
+                
+                // Если всё равно нет ID — пробуем через tgWebAppData
+                if (!gameState.playerId) {{
+                    try {{
+                        var hashParams = new URLSearchParams(window.location.hash.substring(1));
+                        var tgWebAppData = hashParams.get('tgWebAppData');
+                        if (tgWebAppData) {{
+                            var parsed = JSON.parse(decodeURIComponent(tgWebAppData));
+                            if (parsed && parsed.user && parsed.user.id) {{
+                                gameState.playerId = parsed.user.id;
+                                debugLog('👤 ID из hash: ' + gameState.playerId);
+                            }}
+                        }}
+                    }} catch(e) {{
+                        debugLog('⚠️ Не удалось распарсить tgWebAppData');
+                    }}
+                }}
+            }}
+            
+            if (!gameState.playerId) {{
+                debugLog('⚠️ Нет данных пользователя!');
+            }}
+            
             if (gameState.gameId) {{
                 debugLog('🎮 Game ID: ' + gameState.gameId);
             }} else {{
@@ -1133,7 +1137,7 @@ async def inline_query_handler(query: types.InlineQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ПЕРЕДАЧЕЙ USER_ID)
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1146,24 +1150,31 @@ async def game_callback(callback: types.CallbackQuery):
     print("=" * 60)
     
     game_id = str(uuid.uuid4())[:8]
-    print(f"🆕 Создан Game ID: {game_id}")
+    user_id = callback.from_user.id
+    user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     
+    print(f"🆕 Создан Game ID: {game_id}")
+    print(f"👤 User ID: {user_id}")
+    print(f"👤 User Name: {user_name}")
+    
+    # Создаём игру с user_id как host_id
     games[game_id] = {
         'game_id': game_id,
-        'chat_id': str(callback.from_user.id),
+        'chat_id': str(user_id),
         'players': [],
         'status': 'waiting',
         'round': 0,
         'max_rounds': 5,
-        'host_id': str(callback.from_user.id),
-        'host_name': callback.from_user.first_name or callback.from_user.username or 'Игрок',
+        'host_id': str(user_id),
+        'host_name': user_name,
         'created_at': datetime.now().isoformat(),
         'votes': {},
         'eliminated': [],
     }
-    print(f"✅ Игра создана")
+    print(f"✅ Игра создана: {games[game_id]}")
     
-    game_url = f"{WEBAPP_URL}?game_id={game_id}"
+    # ★★★ ПЕРЕДАЁМ USER_ID В URL ★★★
+    game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}"
     print(f"🔗 URL игры: {game_url}")
     
     await callback.answer(url=game_url)
@@ -1250,6 +1261,7 @@ async def api_get_state(request):
         game_id = data.get('game_id')
         
         print(f"🔍 Поиск игры: {game_id}")
+        print(f"👤 Player ID: {player_id}")
         
         game = None
         for g in games.values():
@@ -1261,7 +1273,11 @@ async def api_get_state(request):
             print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
+        print(f"✅ Игра найдена: {game}")
+        
+        player = None
+        if player_id:
+            player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         
         response_data = {
             'game_id': game['game_id'],
@@ -1269,7 +1285,7 @@ async def api_get_state(request):
             'players': game['players'],
             'round': game['round'],
             'max_rounds': game['max_rounds'],
-            'is_host': str(game['host_id']) == str(player_id) if player else False,
+            'is_host': str(game['host_id']) == str(player_id) if player_id else False,
         }
         
         print(f"📤 Ответ: {response_data}")
@@ -1306,18 +1322,22 @@ async def api_join_game(request):
         if len(game['players']) >= 6:
             return web.json_response({'status': 'error', 'message': 'Игра заполнена'}, status=400)
         
-        if any(str(p['id']) == str(player_id) for p in game['players']):
+        # Проверяем, есть ли уже такой игрок
+        if player_id and any(str(p['id']) == str(player_id) for p in game['players']):
             return web.json_response({
                 'status': 'success',
                 'message': 'Игрок уже в игре',
                 'players': game['players'],
             })
         
+        # Если player_id = None, но мы знаем host_id — это ведущий
+        is_host = str(game['host_id']) == str(player_id) if player_id else False
+        
         player = {
-            'id': str(player_id),
+            'id': str(player_id) if player_id else str(game['host_id']),
             'name': player_name,
             'username': username,
-            'is_host': str(game['host_id']) == str(player_id),
+            'is_host': is_host,
             'cards': [],
             'revealed': [],
         }
