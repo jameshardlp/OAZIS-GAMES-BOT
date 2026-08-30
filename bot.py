@@ -43,10 +43,6 @@ PORT = int(os.getenv("PORT", 8082))
 
 if not BOT_TOKEN:
     print("❌ ОШИБКА: BOT_TOKEN не найден в .env файле!")
-    print("📝 Создай файл .env с содержимым:")
-    print("   BOT_TOKEN=твой_токен_от_BotFather")
-    print("   WEBAPP_URL=https://твой_домен.bothost.tech")
-    print("   PORT=8082")
     sys.exit(1)
 
 if not WEBAPP_URL:
@@ -63,8 +59,16 @@ print(f"🎮 Game Short Name: oaziscaffee")
 # ============================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-games = {}  # chat_id -> game_data
+games = {}
 CARDS = None
+
+# Список имён ботов
+BOT_NAMES = [
+    "🤖 Бот-Шериф", "🤖 Бот-Бармен", "🤖 Бот-Повар", 
+    "🤖 Бот-Механик", "🤖 Бот-Доктор", "🤖 Бот-Инженер",
+    "🤖 Бот-Учёный", "🤖 Бот-Солдат", "🤖 Бот-Разведчик",
+    "🤖 Бот-Снайпер", "🤖 Бот-Сапёр", "🤖 Бот-Медик"
+]
 
 # ============================================
 # 5. ТЕКСТЫ
@@ -633,8 +637,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 var div = document.createElement('div');
                 div.className = 'player-item';
                 var hostBadge = player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : '';
+                var isBot = player.is_bot ? '🤖 ' : '';
                 div.innerHTML = `
-                    <span>👤 ${{player.name}}</span>
+                    <span>${{isBot}}👤 ${{player.name}}</span>
                     ${{hostBadge}}
                 `;
                 container.appendChild(div);
@@ -915,6 +920,7 @@ async def cmd_start(message: types.Message):
         "3️⃣ Присоединяйся к игре!\n\n"
         "📋 **Команды:**\n"
         "/play - Начать игру в этом чате\n"
+        "/addbots N - Добавить N ботов (1-3, только ведущий)\n"
         "/status - Показать статус игры\n"
         "/host - Назначить ведущего\n"
         "/whohost - Показать ведущего\n"
@@ -925,7 +931,7 @@ async def cmd_start(message: types.Message):
 
 @dp.message(Command("play"))
 async def cmd_play(message: types.Message):
-    """Отправить игру в чат через send_game (работает в группах)"""
+    """Отправить игру в чат через send_game"""
     
     print("=" * 60)
     print("🎮 КОМАНДА /play")
@@ -937,7 +943,6 @@ async def cmd_play(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name or message.from_user.username or 'Игрок'
     
-    # Создаём или находим игру
     if chat_id in games:
         game = games[chat_id]
         game_id = game['game_id']
@@ -979,7 +984,6 @@ async def cmd_play(message: types.Message):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ОТПРАВЛЯЕМ ИГРУ ЧЕРЕЗ send_game ★★★
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🎮 Играть",
@@ -996,6 +1000,115 @@ async def cmd_play(message: types.Message):
     print("✅ Игра отправлена в чат!")
     print("=" * 60)
 
+@dp.message(Command("addbots"))
+async def cmd_add_bots(message: types.Message):
+    """Добавить ботов в игру (только ведущий)"""
+    
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры. Сначала создай игру через /play")
+        return
+    
+    game = games[chat_id]
+    
+    if str(message.from_user.id) != str(game['host_id']):
+        await message.answer("⛔ Только ведущий может добавлять ботов!")
+        return
+    
+    if game['status'] != 'waiting':
+        await message.answer("❌ Игра уже началась! Ботов можно добавлять только в лобби.")
+        return
+    
+    # Получаем количество ботов
+    parts = message.text.split()
+    if len(parts) < 2:
+        await message.answer("❌ Использование: /addbots N (где N от 1 до 3)")
+        return
+    
+    try:
+        count = int(parts[1])
+        if count < 1 or count > 3:
+            await message.answer("❌ Можно добавить от 1 до 3 ботов!")
+            return
+    except:
+        await message.answer("❌ Введи число! Например: /addbots 2")
+        return
+    
+    # Проверяем, сколько ещё можно добавить
+    current_players = len(game['players'])
+    max_players = 6
+    available = max_players - current_players
+    
+    if count > available:
+        await message.answer(f"❌ Можно добавить максимум {available} ботов (сейчас {current_players} игроков)")
+        return
+    
+    # Добавляем ботов
+    bot_count = 0
+    added_names = []
+    used_names = [p['name'] for p in game['players']]
+    
+    for i in range(count):
+        # Находим свободное имя
+        available_names = [n for n in BOT_NAMES if n not in used_names]
+        if not available_names:
+            break
+        
+        bot_name = available_names[0]
+        used_names.append(bot_name)
+        bot_id = f"bot_{uuid.uuid4()}"[:8]
+        
+        player = {
+            'id': bot_id,
+            'name': bot_name,
+            'username': '',
+            'is_host': False,
+            'is_bot': True,
+            'cards': [],
+            'revealed': [],
+        }
+        game['players'].append(player)
+        added_names.append(bot_name)
+        bot_count += 1
+    
+    await message.answer(
+        f"🤖 Добавлено {bot_count} ботов:\n"
+        f"{', '.join(added_names)}\n\n"
+        f"👥 Всего игроков: {len(game['players'])} из 6\n"
+        f"🎮 Статус: {game['status']}"
+    )
+
+# ============================================
+# 10. БОТЫ В API (автоматические действия)
+# ============================================
+
+def bot_decide_vote(game, player_id):
+    """Бот выбирает, за кого голосовать (случайно)"""
+    if not game or not game['players']:
+        return None
+    
+    # Бот не может голосовать за себя
+    available = [p for p in game['players'] if p['id'] != player_id and not p.get('is_bot', False)]
+    
+    # Если есть живые игроки — голосуем за них
+    if available:
+        return random.choice(available)['id']
+    return None
+
+async def process_bot_votes():
+    """Обработка голосов ботов (вызывается из API)"""
+    for chat_id, game in games.items():
+        if game['status'] == 'voting':
+            for player in game['players']:
+                if player.get('is_bot', False) and player['id'] not in game['votes']:
+                    target = bot_decide_vote(game, player['id'])
+                    if target:
+                        game['votes'][player['id']] = target
+
+# ============================================
+# 11. КОМАНДЫ СТАТУСА И УПРАВЛЕНИЯ
+# ============================================
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
     chat_id = str(message.chat.id)
@@ -1005,11 +1118,16 @@ async def cmd_status(message: types.Message):
         return
     
     game = games[chat_id]
+    bot_count = sum(1 for p in game['players'] if p.get('is_bot', False))
+    human_count = len(game['players']) - bot_count
+    
     await message.answer(
         f"📊 **Статус игры:**\n"
         f"🎮 Game ID: `{game['game_id']}`\n"
         f"👑 Ведущий: {game['host_name']}\n"
-        f"👥 Игроков: {len(game['players'])} из 4-6\n"
+        f"👥 Игроков: {len(game['players'])} из 6\n"
+        f"👤 Реальных: {human_count}\n"
+        f"🤖 Ботов: {bot_count}\n"
         f"📝 Статус: {game['status']}\n"
         f"📊 Раунд: {game['round']} из {game['max_rounds']}",
         parse_mode="Markdown"
@@ -1154,7 +1272,7 @@ async def cmd_rules(message: types.Message):
     await message.answer(RULES_TEXT, parse_mode="Markdown")
 
 # ============================================
-# 10. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
+# 12. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1170,7 +1288,6 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # ★★★ ПОЛУЧАЕМ CHAT_ID ★★★
     if callback.message and callback.message.chat:
         chat_id = str(callback.message.chat.id)
         print(f"💬 Chat ID: {chat_id}")
@@ -1179,7 +1296,6 @@ async def game_callback(callback: types.CallbackQuery):
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПРОВЕРЯЕМ ИГРУ ★★★
     if chat_id in games:
         game = games[chat_id]
         game_id = game['game_id']
@@ -1205,7 +1321,6 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ПЕРЕДАЁМ URL ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
@@ -1214,7 +1329,7 @@ async def game_callback(callback: types.CallbackQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ГЕНЕРАЦИЯ КАРТ
+# 13. ГЕНЕРАЦИЯ КАРТ
 # ============================================
 def generate_cards_for_player():
     cards = []
@@ -1263,7 +1378,7 @@ def generate_cards_for_player():
     return cards
 
 # ============================================
-# 12. CORS MIDDLEWARE
+# 14. CORS MIDDLEWARE
 # ============================================
 @web.middleware
 async def cors_middleware(request, handler):
@@ -1274,7 +1389,7 @@ async def cors_middleware(request, handler):
     return response
 
 # ============================================
-# 13. API ОБРАБОТЧИКИ
+# 15. API ОБРАБОТЧИКИ (с поддержкой ботов)
 # ============================================
 async def api_test(request):
     print("🧪 Тестовый API вызван!")
@@ -1291,6 +1406,8 @@ async def api_get_state(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
+        print(f"🔍 Поиск игры: {game_id}")
+        
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -1298,7 +1415,10 @@ async def api_get_state(request):
                 break
         
         if not game:
+            print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+        
+        print(f"✅ Игра найдена")
         
         player = None
         if player_id:
@@ -1313,6 +1433,7 @@ async def api_get_state(request):
             'is_host': str(game['host_id']) == str(player_id) if player_id else False,
         })
     except Exception as e:
+        print(f"❌ Ошибка: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_join_game(request):
@@ -1323,6 +1444,9 @@ async def api_join_game(request):
         player_name = data.get('player_name')
         username = data.get('username', '')
         game_id = data.get('game_id')
+        
+        print(f"👤 Игрок: {player_name} (ID: {player_id})")
+        print(f"🎮 Игра: {game_id}")
         
         game = None
         for g in games.values():
@@ -1353,10 +1477,13 @@ async def api_join_game(request):
             'name': player_name,
             'username': username,
             'is_host': is_host,
+            'is_bot': False,
             'cards': [],
             'revealed': [],
         }
         game['players'].append(player)
+        
+        print(f"✅ Игрок присоединился: {player}")
         
         return web.json_response({
             'status': 'success',
@@ -1505,7 +1632,7 @@ async def api_get_voting_players(request):
                 'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
-            if str(p['id']) != str(player_id)
+            if str(p['id']) != str(player_id) and not p.get('is_bot', False)
         ]
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
@@ -1531,7 +1658,17 @@ async def api_submit_vote(request):
         
         game['votes'][str(player_id)] = str(target_id)
         
-        all_voted = len(game['votes']) == len(game['players'])
+        # ★★★ БОТЫ ГОЛОСУЮТ АВТОМАТИЧЕСКИ ★★★
+        for p in game['players']:
+            if p.get('is_bot', False) and str(p['id']) not in game['votes']:
+                # Бот голосует за случайного реального игрока
+                real_players = [pl for pl in game['players'] if not pl.get('is_bot', False) and str(pl['id']) != str(p['id'])]
+                if real_players:
+                    target = random.choice(real_players)['id']
+                    game['votes'][str(p['id'])] = str(target)
+                    print(f"🤖 Бот {p['name']} проголосовал за {target}")
+        
+        all_voted = len(game['votes']) >= len(game['players'])
         
         if all_voted:
             vote_results = {}
@@ -1583,7 +1720,7 @@ async def api_submit_vote(request):
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 # ============================================
-# 14. СТАТИЧЕСКИЕ ФАЙЛЫ
+# 16. СТАТИЧЕСКИЕ ФАЙЛЫ
 # ============================================
 async def serve_html(request):
     return web.Response(text=HTML_PAGE, content_type='text/html')
@@ -1599,7 +1736,7 @@ async def handle_options(request):
     })
 
 # ============================================
-# 15. ЗАПУСК
+# 17. ЗАПУСК
 # ============================================
 async def main():
     load_cards()
