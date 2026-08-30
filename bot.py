@@ -94,7 +94,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА
+# 6. HTML СТРАНИЦА (С УЛУЧШЕННЫМ ОБНОВЛЕНИЕМ)
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -167,8 +167,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
             isHost: false,
         }};
 
-        async function refreshGameState() {{
-            debugLog('🔄 Принудительное обновление состояния...');
+        async function refreshGameState(retryCount) {{
+            if (retryCount === undefined) retryCount = 0;
+            debugLog('🔄 Принудительное обновление состояния (попытка ' + (retryCount + 1) + ')...');
             try {{
                 var url = API_BASE + '/api/game/state';
                 var response = await fetch(url, {{
@@ -189,6 +190,8 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.game_id) {{
                     var oldStatus = gameState.status;
+                    var oldPlayersCount = gameState.players.length;
+                    
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
                     gameState.isHost = data.is_host || false;
@@ -197,16 +200,44 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     
                     updateUI();
                     
-                    if (gameState.status === 'voting' && oldStatus !== 'voting') {{
+                    if (oldStatus !== gameState.status) {{
+                        debugLog('🔄 Статус изменился: ' + oldStatus + ' -> ' + gameState.status);
+                    }}
+                    
+                    if (oldPlayersCount !== gameState.players.length) {{
+                        debugLog('👥 Количество игроков изменилось: ' + oldPlayersCount + ' -> ' + gameState.players.length);
+                    }}
+                    
+                    if (gameState.status === 'voting') {{
+                        debugLog('🗳️ Статус "voting" — запускаем голосование');
                         await startVoting();
                     }}
                     
-                    if (gameState.status === 'playing' && oldStatus !== 'playing') {{
+                    if (gameState.status === 'playing') {{
+                        debugLog('🃏 Статус "playing" — загружаем карты');
                         await getMyCards();
+                    }}
+                    
+                    if (gameState.status === 'finished') {{
+                        debugLog('🏆 Игра завершена!');
+                        updateUI();
+                    }}
+                    
+                    if (gameState.status === 'playing' && retryCount < 3) {{
+                        debugLog('⏳ Статус всё ещё "playing", повторная попытка через 1.5 секунды...');
+                        setTimeout(function() {{
+                            refreshGameState(retryCount + 1);
+                        }}, 1500);
                     }}
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка обновления: ' + error.message);
+                if (retryCount < 2) {{
+                    debugLog('⏳ Повторная попытка через 1 секунду...');
+                    setTimeout(function() {{
+                        refreshGameState(retryCount + 1);
+                    }}, 1000);
+                }}
             }}
         }}
 
@@ -306,6 +337,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var revealBtn = document.getElementById('reveal-card');
             if (revealBtn) {{
                 revealBtn.addEventListener('click', function() {{
+                    debugLog('🔄 НАЖАТА КНОПКА "ОТКРЫТЬ КАРТУ"!');
                     revealCard();
                 }});
             }}
@@ -313,6 +345,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var voteBtn = document.getElementById('vote-btn');
             if (voteBtn) {{
                 voteBtn.addEventListener('click', function() {{
+                    debugLog('🔄 НАЖАТА КНОПКА "ПРОГОЛОСОВАТЬ"!');
                     submitVote();
                 }});
             }}
@@ -465,11 +498,13 @@ HTML_PAGE = f'''<!DOCTYPE html>
         }}
 
         async function revealCard() {{
+            debugLog('🃏 Открытие карты...');
             var cardIndex = gameState.myCards.findIndex(function(c) {{
                 return !c.isRevealed;
             }});
             
             if (cardIndex === -1) {{
+                debugLog('⚠️ Все карты уже открыты');
                 var tg = window.Telegram.WebApp;
                 tg.showPopup({{
                     title: '🃏',
@@ -491,15 +526,42 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }});
                 
                 var data = await response.json();
+                debugLog('📦 Ответ открытия карты: ' + JSON.stringify(data));
                 
                 if (data.status === 'success') {{
                     gameState.myCards[cardIndex].isRevealed = true;
                     gameState.revealedCards = data.revealed_cards || [];
                     renderCards();
-                    await refreshGameState();
+                    debugLog('✅ Карта открыта, осталось: ' + gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length);
+                    
+                    setTimeout(function() {{
+                        refreshGameState();
+                    }}, 2000);
+                    
+                    var remaining = gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length;
+                    if (remaining === 0) {{
+                        debugLog('🔄 Все карты открыты! Проверяем статус через 1 секунду...');
+                        setTimeout(function() {{
+                            refreshGameState();
+                        }}, 1000);
+                    }}
+                }} else {{
+                    debugLog('❌ Ошибка открытия карты: ' + (data.message || 'неизвестно'));
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка открытия карты',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка открытия карты: ' + error.message);
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
             }}
         }}
 
@@ -555,9 +617,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
         }}
 
         async function submitVote() {{
+            debugLog('🗳️ ОТПРАВКА ГОЛОСА...');
             var selected = document.querySelector('input[name="vote"]:checked');
             
             if (!selected) {{
+                debugLog('⚠️ Не выбран игрок');
                 var tg = window.Telegram.WebApp;
                 tg.showPopup({{
                     title: '⚠️',
@@ -568,6 +632,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
             
             var targetId = parseInt(selected.value);
+            debugLog('🎯 Голос за ID: ' + targetId);
             
             try {{
                 var response = await fetch(API_BASE + '/api/game/vote', {{
@@ -587,12 +652,33 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     document.getElementById('vote-btn').disabled = true;
                     debugLog('✅ Голос учтён!');
                     
-                    setTimeout(async function() {{
-                        await refreshGameState();
+                    setTimeout(function() {{
+                        refreshGameState();
                     }}, 2000);
+                    
+                    if (data.all_voted) {{
+                        debugLog('🔄 Все проголосовали! Проверяем статус через 3 секунды...');
+                        setTimeout(function() {{
+                            refreshGameState();
+                        }}, 3000);
+                    }}
+                }} else {{
+                    debugLog('❌ Ошибка голосования: ' + (data.message || 'неизвестно'));
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка голосования',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
                 }}
             }} catch (error) {{
-                debugLog('❌ Ошибка голосования: ' + error.message);
+                debugLog('❌ Ошибка отправки голоса: ' + error.message);
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
             }}
         }}
 
@@ -697,6 +783,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             document.getElementById('reveal-card').disabled = (remaining === 0);
         }}
 
+        // ★★★ ОБНОВЛЯЕМ КАЖДЫЕ 2 СЕКУНДЫ ★★★
         setInterval(async function() {{
             if (gameState.status !== 'finished') {{
                 try {{
@@ -727,10 +814,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         }}
                     }}
                 }} catch (error) {{
-                    // Игнорируем
+                    // Игнорируем ошибки фонового обновления
                 }}
             }}
-        }}, 3000);
+        }}, 2000);
 
         debugLog('✅ Mini App готов!');
     </script>
@@ -1358,9 +1445,7 @@ def bot_decide_vote(game, player_id):
     if not game or not game['players']:
         return None
     
-    # ★★★ БОТЫ ГОЛОСУЮТ ЗА ВСЕХ, КРОМЕ СЕБЯ ★★★
     available = [p for p in game['players'] if p['id'] != player_id]
-    
     if available:
         return random.choice(available)['id']
     return None
@@ -1507,7 +1592,6 @@ async def api_start_game(request):
             player['cards'] = generate_cards_for_player()
             player['revealed'] = []
         
-        # ★★★ БОТЫ ОТКРЫВАЮТ ВСЕ КАРТЫ СРАЗУ ★★★
         bot_reveal_all_cards(game)
         
         game['status'] = 'playing'
@@ -1518,7 +1602,6 @@ async def api_start_game(request):
             f"🔥 ИГРА НАЧАЛАСЬ!\n\n👥 Игроков: {len(game['players'])}\n📝 Раунд 1 из {game['max_rounds']}\n\n🤖 Боты уже открыли свои карты!"
         )
         
-        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
         await check_all_revealed(game)
         
         return web.json_response({'status': 'success', 'message': 'Игра началась'})
@@ -1581,11 +1664,20 @@ async def api_reveal_card(request):
         card['isRevealed'] = True
         player['revealed'].append(card)
         
-        # ★★★ БОТЫ ОТКРЫВАЮТ ВСЕ КАРТЫ АВТОМАТИЧЕСКИ ★★★
         bot_reveal_all_cards(game)
         
-        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
-        await check_all_revealed(game)
+        all_revealed = True
+        for p in game['players']:
+            if len(p['revealed']) < len(p['cards']):
+                all_revealed = False
+                break
+        
+        if all_revealed and game['status'] == 'playing':
+            game['status'] = 'voting'
+            await bot.send_message(
+                game['chat_id'],
+                f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки открыли карты. Голосуйте в приложении!"
+            )
         
         return web.json_response({
             'status': 'success',
@@ -1612,7 +1704,6 @@ async def api_get_voting_players(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # ★★★ ПОКАЗЫВАЕМ ВСЕХ ИГРОКОВ (ВКЛЮЧАЯ БОТОВ) ★★★
         players_for_vote = [
             {
                 'id': str(p['id']),
@@ -1620,7 +1711,7 @@ async def api_get_voting_players(request):
                 'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
-            if str(p['id']) != str(player_id)  # Только не голосующий
+            if str(p['id']) != str(player_id)
         ]
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
@@ -1646,7 +1737,6 @@ async def api_submit_vote(request):
         
         game['votes'][str(player_id)] = str(target_id)
         
-        # ★★★ БОТЫ ГОЛОСУЮТ АВТОМАТИЧЕСКИ ★★★
         for p in game['players']:
             if p.get('is_bot', False) and str(p['id']) not in game['votes']:
                 target = bot_decide_vote(game, p['id'])
@@ -1691,7 +1781,6 @@ async def api_submit_vote(request):
                     for card in p['cards']:
                         card['isRevealed'] = False
                 
-                # ★★★ БОТЫ СНОВА ОТКРЫВАЮТ ВСЕ КАРТЫ В НОВОМ РАУНДЕ ★★★
                 bot_reveal_all_cards(game)
                 
                 await bot.send_message(
@@ -1699,7 +1788,6 @@ async def api_submit_vote(request):
                     f"📝 РАУНД {game['round']}\n\nНовый раунд! Открывайте карты.\n🤖 Боты уже открыли свои карты!"
                 )
                 
-                # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
                 await check_all_revealed(game)
         
         return web.json_response({
