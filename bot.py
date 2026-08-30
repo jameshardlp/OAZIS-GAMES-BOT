@@ -63,8 +63,7 @@ print(f"🎮 Game Short Name: oaziscaffee")
 # ============================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-games = {}
-user_game_map = {}  # ★★★ user_id -> game_id ★★★
+games = {}  # chat_id -> game_data
 CARDS = None
 
 # ============================================
@@ -933,17 +932,11 @@ async def cmd_start(message: types.Message):
 async def cmd_status(message: types.Message):
     chat_id = str(message.chat.id)
     
-    # Ищем игру по chat_id
-    game = None
-    for g in games.values():
-        if g['chat_id'] == chat_id:
-            game = g
-            break
-    
-    if not game:
+    if chat_id not in games:
         await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
         return
     
+    game = games[chat_id]
     await message.answer(
         f"📊 **Статус игры:**\n"
         f"🎮 Game ID: `{game['game_id']}`\n"
@@ -958,15 +951,11 @@ async def cmd_status(message: types.Message):
 async def cmd_host(message: types.Message):
     chat_id = str(message.chat.id)
     
-    game = None
-    for g in games.values():
-        if g['chat_id'] == chat_id:
-            game = g
-            break
-    
-    if not game:
+    if chat_id not in games:
         await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
         return
+    
+    game = games[chat_id]
     
     if str(message.from_user.id) != str(game['host_id']):
         await message.answer("⛔ Только текущий ведущий может назначить нового!")
@@ -1052,16 +1041,11 @@ async def cmd_host(message: types.Message):
 async def cmd_whohost(message: types.Message):
     chat_id = str(message.chat.id)
     
-    game = None
-    for g in games.values():
-        if g['chat_id'] == chat_id:
-            game = g
-            break
-    
-    if not game:
+    if chat_id not in games:
         await message.answer("❌ Нет активной игры")
         return
     
+    game = games[chat_id]
     host_name = game.get('host_name', 'Неизвестно')
     host_id = game.get('host_id', 'Нет ID')
     
@@ -1084,23 +1068,17 @@ async def cmd_whohost(message: types.Message):
 async def cmd_stop_game(message: types.Message):
     chat_id = str(message.chat.id)
     
-    game = None
-    game_key = None
-    for key, g in games.items():
-        if g['chat_id'] == chat_id:
-            game = g
-            game_key = key
-            break
-    
-    if not game:
+    if chat_id not in games:
         await message.answer("❌ Нет активной игры")
         return
+    
+    game = games[chat_id]
     
     if str(message.from_user.id) != str(game['host_id']):
         await message.answer("⛔ Только ведущий может остановить игру!")
         return
     
-    del games[game_key]
+    del games[chat_id]
     await message.answer("⛔ Игра остановлена ведущим!")
 
 @dp.message(Command("rules"))
@@ -1108,7 +1086,7 @@ async def cmd_rules(message: types.Message):
     await message.answer(RULES_TEXT, parse_mode="Markdown")
 
 # ============================================
-# 10. INLINE-РЕЖИМ (СОЗДАЁТ ИГРУ)
+# 10. INLINE-РЕЖИМ
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
@@ -1119,27 +1097,37 @@ async def inline_query_handler(query: types.InlineQuery):
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
     print("=" * 60)
     
+    # ★★★ ИСПОЛЬЗУЕМ CHAT_ID ИЗ QUERY ★★★
+    # В inline-запросе нет chat_id, но мы можем использовать from_user.id
+    # Если пользователь в группе, это будет ID группы? Нет.
+    # Но мы будем использовать ID пользователя как chat_id для inline-режима.
+    # Для групповых игр нужно использовать общий chat_id, но в inline-режиме
+    # мы не можем получить chat_id группы.
+    # Поэтому:
+    # - В inline-режиме используем user_id как chat_id
+    # - В game_callback используем chat_id из callback.message.chat.id
+    
     user_id = query.from_user.id
     user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
     
-    # ★★★ СОЗДАЁМ ИГРУ ★★★
-    chat_id = str(user_id)  # Для inline используем user_id как chat_id
-    game_id = str(uuid.uuid4())[:8]
+    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ ИГРА ДЛЯ ЭТОГО ПОЛЬЗОВАТЕЛЯ ★★★
+    # Ищем игру, где chat_id == str(user_id) (личная игра)
+    # Для групповых игр игра будет создана в game_callback с chat_id группы
+    game = None
+    game_id = None
     
-    # Проверяем, есть ли уже игра для этого пользователя/чата
-    existing_game = None
-    for g in games.values():
-        if g['chat_id'] == chat_id:
-            existing_game = g
-            break
+    # Проверяем, есть ли игра у этого пользователя
+    if str(user_id) in games:
+        game = games[str(user_id)]
+        game_id = game['game_id']
+        print(f"✅ Найдена игра для пользователя: {game_id}")
     
-    if existing_game:
-        game_id = existing_game['game_id']
-        print(f"✅ Найдена существующая игра: {game_id}")
-    else:
-        games[game_id] = {
+    # Если нет игры, создаём
+    if not game:
+        game_id = str(uuid.uuid4())[:8]
+        games[str(user_id)] = {
             'game_id': game_id,
-            'chat_id': chat_id,
+            'chat_id': str(user_id),
             'players': [],
             'status': 'waiting',
             'round': 0,
@@ -1150,9 +1138,9 @@ async def inline_query_handler(query: types.InlineQuery):
             'votes': {},
             'eliminated': [],
         }
-        print(f"🆕 Создана новая игра: {game_id}")
+        print(f"🆕 Создана игра для пользователя: {game_id}")
     
-    # ★★★ КАРТОЧКА С КНОПКОЙ PLAY ★★★
+    # ★★★ ОТПРАВЛЯЕМ КАРТОЧКУ С ИГРОЙ ★★★
     result = types.InlineQueryResultGame(
         id="oasis_game",
         game_short_name="oaziscaffee"
@@ -1179,21 +1167,34 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # ★★★ ИЩЕМ ИГРУ ★★★
-    chat_id = str(user_id)
-    game = None
-    game_id = None
+    # ★★★ ОПРЕДЕЛЯЕМ CHAT_ID ★★★
+    # Если есть message и chat — используем chat_id группы/чата
+    if callback.message and callback.message.chat:
+        chat_id = str(callback.message.chat.id)
+        print(f"💬 Chat ID: {chat_id}")
+    else:
+        # Если нет message (например, из inline-режима) — используем user_id
+        chat_id = str(user_id)
+        print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    for g in games.values():
-        if g['chat_id'] == chat_id:
-            game = g
-            game_id = g['game_id']
-            break
-    
-    if not game:
-        # Если игра не найдена — создаём
+    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ДЛЯ ЭТОГО CHAT_ID ★★★
+    if chat_id in games:
+        game = games[chat_id]
+        game_id = game['game_id']
+        print(f"✅ Найдена существующая игра: {game_id} для чата {chat_id}")
+        
+        # Проверяем, есть ли уже игрок в игре
+        player_exists = any(str(p['id']) == str(user_id) for p in game['players'])
+        if player_exists:
+            print(f"👤 Игрок {user_id} уже в игре")
+        else:
+            print(f"👤 Игрок {user_id} ещё не в игре — добавится при входе")
+    else:
+        # ★★★ СОЗДАЁМ НОВУЮ ИГРУ ★★★
         game_id = str(uuid.uuid4())[:8]
-        games[game_id] = {
+        print(f"🆕 Создаём новую игру: {game_id} для чата {chat_id}")
+        
+        games[chat_id] = {
             'game_id': game_id,
             'chat_id': chat_id,
             'players': [],
@@ -1206,11 +1207,12 @@ async def game_callback(callback: types.CallbackQuery):
             'votes': {},
             'eliminated': [],
         }
-        print(f"🆕 Создана новая игра: {game_id}")
+        print(f"✅ Игра создана: {games[chat_id]}")
     
     # ★★★ ПЕРЕДАЁМ URL С game_id ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
+    print(f"👤 Имя в URL: {user_name}")
     
     await callback.answer(url=game_url)
     print("✅ Ответ отправлен с URL игры!")
@@ -1297,11 +1299,17 @@ async def api_get_state(request):
         print(f"🔍 Поиск игры: {game_id}")
         print(f"👤 Player ID: {player_id}")
         
-        if game_id not in games:
+        # Ищем игру по game_id
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
+        
+        if not game:
             print(f"❌ Игра не найдена: {game_id}")
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game = games[game_id]
         print(f"✅ Игра найдена")
         
         player = None
@@ -1336,10 +1344,15 @@ async def api_join_game(request):
         print(f"👤 Игрок: {player_name} (ID: {player_id})")
         print(f"🎮 Игра: {game_id}")
         
-        if game_id not in games:
-            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+        # Ищем игру по game_id
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
         
-        game = games[game_id]
+        if not game:
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         if game['status'] != 'waiting':
             return web.json_response({'status': 'error', 'message': 'Игра уже началась'}, status=400)
@@ -1384,10 +1397,14 @@ async def api_start_game(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        if game_id not in games:
-            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
         
-        game = games[game_id]
+        if not game:
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
         if str(game['host_id']) != str(player_id):
             return web.json_response({'status': 'error', 'message': 'Только ведущий может начать игру'}, status=403)
@@ -1418,10 +1435,15 @@ async def api_get_cards(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        if game_id not in games:
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
+        
+        if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game = games[game_id]
         player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
@@ -1442,10 +1464,15 @@ async def api_reveal_card(request):
         game_id = data.get('game_id')
         card_index = data.get('card_index')
         
-        if game_id not in games:
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
+        
+        if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game = games[game_id]
         player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
@@ -1486,10 +1513,15 @@ async def api_get_voting_players(request):
         player_id = data.get('player_id')
         game_id = data.get('game_id')
         
-        if game_id not in games:
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
+        
+        if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game = games[game_id]
         players_for_vote = [
             {
                 'id': str(p['id']),
@@ -1512,10 +1544,15 @@ async def api_submit_vote(request):
         game_id = data.get('game_id')
         target_id = data.get('target_id')
         
-        if game_id not in games:
+        game = None
+        for g in games.values():
+            if g['game_id'] == game_id:
+                game = g
+                break
+        
+        if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        game = games[game_id]
         game['votes'][str(player_id)] = str(target_id)
         
         all_voted = len(game['votes']) == len(game['players'])
