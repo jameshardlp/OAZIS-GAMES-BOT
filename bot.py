@@ -108,11 +108,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
     <div id="app">
         <div class="neon-sign">
             <h1 class="neon-text">ОАЗИС</h1>
-            <p class="neon-sub">Зомби-убежище • Техас 1999</p>
+            <p class="neon-sub">Бар на окраине • Техас 1998</p>
         </div>
         
-        <div id="debug-panel" style="background:#1a0a00;border:2px solid #ff6b35;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.7rem;font-family:monospace;min-height:120px;max-height:200px;overflow-y:auto;">
-            <div style="color:#ff6b35;font-weight:bold;">📡 ОТЛАДКА:</div>
+        <div id="debug-panel" style="background:#1a0a00;border:2px solid #FFB000;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.7rem;font-family:monospace;min-height:120px;max-height:200px;overflow-y:auto;">
+            <div style="color:#FFB000;font-weight:bold;">📡 ОТЛАДКА:</div>
             <div id="debug-log" style="color:#f5e6d3;white-space:pre-wrap;word-break:break-all;"></div>
         </div>
         
@@ -127,7 +127,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     <h2>🎴 Твои карты</h2>
                     <div id="cards-container"></div>
                     <button id="reveal-card" class="btn-neon">🃏 Открыть карту</button>
-                    <button id="continue-btn" class="btn-neon" style="display:none;background:#ff6b35;color:#0a0a0a;">▶️ Продолжить</button>
+                    <button id="continue-btn" class="btn-neon" style="display:none;background:#FFB000;color:#0a0a0a;">▶️ Продолжить</button>
                 </div>
                 <div id="voting-area" style="display:none;">
                     <h2>🗳️ Голосование</h2>
@@ -829,11 +829,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }}
                 
                 container.innerHTML = `
-                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #ff6b35;">
-                        <h2 style="color:#ff6b35;font-size:2rem;">👀 РЕЖИМ НАБЛЮДЕНИЯ</h2>
+                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #FFB000;">
+                        <h2 style="color:#FFB000;font-size:2rem;">👀 РЕЖИМ НАБЛЮДЕНИЯ</h2>
                         <p style="opacity:0.8;margin-top:10px;font-size:1.1rem;">${{statusText}}</p>
                         <p style="opacity:0.5;margin-top:5px;">Следите за игрой в реальном времени!</p>
-                        <button id="refresh-btn" class="btn-neon" style="margin-top:20px;border-color:#ff6b35;color:#ff6b35;">🔄 Обновить</button>
+                        <button id="refresh-btn" class="btn-neon" style="margin-top:20px;border-color:#FFB000;color:#FFB000;">🔄 Обновить</button>
                     </div>
                 `;
                 
@@ -859,7 +859,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 div.className = 'character-card';
                 
                 if (card.isRevealed) {{
-                    div.style.borderColor = '#ff6b35';
+                    div.style.borderColor = '#FFB000';
                     div.style.opacity = '1';
                 }} else {{
                     div.style.borderColor = '#666';
@@ -969,8 +969,8 @@ body {
 }
 .neon-text {
     font-size: 4rem;
-    color: #ff6b35;
-    text-shadow: 0 0 10px #ff6b35, 0 0 20px #ff6b35, 0 0 40px #ff6b35, 0 0 80px #ff6b35;
+    color: #FFB000;
+    text-shadow: 0 0 10px #FFB000, 0 0 20px #FFB000, 0 0 40px #FFB000, 0 0 80px #FFB000;
     animation: neon-pulse 2s infinite;
 }
 @keyframes neon-pulse {
@@ -978,13 +978,13 @@ body {
     50% { opacity: 0.7; }
 }
 .neon-sub {
-    color: #ff6b35;
+    color: #FFB000;
     opacity: 0.7;
     letter-spacing: 4px;
 }
 .character-card {
     background: linear-gradient(145deg, #1a0a00, #2a1a0a);
-    border: 2px solid #ff6b35;
+    border: 2px solid #FFB000;
     border-radius: 12px;
     padding: 20px;
     margin: 10px 0;
@@ -996,7 +996,7 @@ body {
     box-shadow: 0 0 40px rgba(255, 107, 53, 0.4);
 }
 .card-type {
-    color: #ff6b35;
+    color: #FFB000;
     font-weight: bold;
     font-size: 0.8rem;
     text-transform: uppercase;
@@ -1009,13 +1009,13 @@ body {
 .card-effect {
     font-style: italic;
     opacity: 0.8;
-    border-top: 1px solid #ff6b35;
+    border-top: 1px solid #FFB000;
     padding-top: 10px;
 }
 .btn-neon {
     background: transparent;
-    color: #ff6b35;
-    border: 2px solid #ff6b35;
+    color: #FFB000;
+    border: 2px solid #FFB000;
     padding: 15px 30px;
     font-size: 1.2rem;
     font-family: 'Courier New', monospace;
@@ -1026,7 +1026,7 @@ body {
     margin: 10px 0;
 }
 .btn-neon:hover:not(:disabled) {
-    background: #ff6b35;
+    background: #FFB000;
     color: #0a0a0a;
     box-shadow: 0 0 30px rgba(255, 107, 53, 0.6);
 }
@@ -1039,7 +1039,7 @@ body {
     margin: 5px 0;
     background: #1a0a00;
     border-radius: 8px;
-    border-left: 3px solid #ff6b35;
+    border-left: 3px solid #FFB000;
 }
 .host-badge {
     color: #ffd700;
