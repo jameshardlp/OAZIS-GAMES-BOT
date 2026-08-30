@@ -15,6 +15,21 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 # ============================================
+# ИМПОРТ МОДУЛЯ ОТЛАДКИ
+# ============================================
+from debug_manager import (
+    is_debug_enabled,
+    toggle_debug,
+    get_debug_status,
+    log_debug,
+    get_debug_panel_html,
+    get_debug_js,
+    get_debug_command_response,
+    api_debug_status,
+    init_debug
+)
+
+# ============================================
 # 1. ЗАГРУЖАЕМ .env ФАЙЛ
 # ============================================
 load_dotenv()
@@ -33,6 +48,12 @@ print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
 print("=" * 60)
 print("📋 Логирование включено на уровень DEBUG")
 print("=" * 60)
+
+# ============================================
+# 2.5. ИНИЦИАЛИЗАЦИЯ ОТЛАДКИ
+# ============================================
+init_debug(True)  # По умолчанию включена
+print("📡 Модуль отладки инициализирован")
 
 # ============================================
 # 3. КОНФИГУРАЦИЯ
@@ -94,8 +115,12 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 👀 **Наблюдатели:** Выбывшие игроки следят за игрой."""
 
 # ============================================
-# 6. HTML СТРАНИЦА
+# 6. HTML СТРАНИЦА (с интеграцией отладки)
 # ============================================
+# Получаем HTML для панели отладки и JS
+DEBUG_PANEL_HTML = get_debug_panel_html()
+DEBUG_JS = get_debug_js()
+
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -111,10 +136,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             <p class="neon-sub">Бар на окраине • Техас 1998</p>
         </div>
         
-        <div id="debug-panel" style="background:#1a0a00;border:2px solid #FFB000;border-radius:8px;padding:10px;margin-bottom:10px;font-size:0.7rem;font-family:monospace;min-height:120px;max-height:200px;overflow-y:auto;">
-            <div style="color:#FFB000;font-weight:bold;">📡 ОТЛАДКА:</div>
-            <div id="debug-log" style="color:#f5e6d3;white-space:pre-wrap;word-break:break-all;"></div>
-        </div>
+        {DEBUG_PANEL_HTML}
         
         <div id="game-container">
             <div id="lobby">
@@ -146,15 +168,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
     <script>
         const API_BASE = '{WEBAPP_URL}';
         
-        function debugLog(message) {{
-            var logEl = document.getElementById('debug-log');
-            if (logEl) {{
-                var timestamp = new Date().toLocaleTimeString();
-                logEl.innerHTML += '[' + timestamp + '] ' + message + '\\n';
-                logEl.scrollTop = logEl.scrollHeight;
-            }}
-            console.log(message);
-        }}
+        // ★★★ ВСТРАИВАЕМ МОДУЛЬ ОТЛАДКИ ★★★
+        {DEBUG_JS}
+        
+        // ★★★ ИНИЦИАЛИЗИРУЕМ ОТЛАДКУ ПРИ ЗАГРУЗКЕ ★★★
+        // Функция initDebug() теперь доступна из модуля
         
         const gameState = {{
             playerId: null,
@@ -224,6 +242,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
         }}
 
         document.addEventListener('DOMContentLoaded', function() {{
+            // Инициализируем отладку
+            initDebug().then(function() {{
+                debugLog('✅ Отладка инициализирована');
+            }});
+            
             debugLog('✅ JS скрипт загружен!');
             
             const tg = window.Telegram.WebApp;
@@ -318,6 +341,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             var revealBtn = document.getElementById('reveal-card');
             if (revealBtn) {{
+                debugLog('✅ Кнопка "Открыть карту" найдена');
                 revealBtn.addEventListener('click', function() {{
                     debugLog('🔄 НАЖАТА КНОПКА "ОТКРЫТЬ КАРТУ"!');
                     revealCard();
@@ -326,6 +350,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             var continueBtn = document.getElementById('continue-btn');
             if (continueBtn) {{
+                debugLog('✅ Кнопка "Продолжить" найдена');
                 continueBtn.addEventListener('click', function() {{
                     debugLog('🔄 НАЖАТА КНОПКА "ПРОДОЛЖИТЬ"!');
                     continueGame();
@@ -334,6 +359,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             var voteBtn = document.getElementById('vote-btn');
             if (voteBtn) {{
+                debugLog('✅ Кнопка "Проголосовать" найдена');
                 voteBtn.addEventListener('click', function() {{
                     debugLog('🔄 НАЖАТА КНОПКА "ПРОГОЛОСОВАТЬ"!');
                     submitVote();
@@ -1136,9 +1162,25 @@ async def cmd_start(message: types.Message):
         "/host - Назначить ведущего\n"
         "/whohost - Показать ведущего\n"
         "/stop - Остановить игру\n"
-        "/rules - Показать правила игры",
+        "/rules - Показать правила игры\n"
+        "/logs - Включить/выключить панель отладки",
         parse_mode="Markdown"
     )
+
+@dp.message(Command("logs"))
+async def cmd_toggle_debug(message: types.Message):
+    """Включить/выключить панель отладки в Mini App"""
+    chat_id = str(message.chat.id)
+    
+    if chat_id not in games:
+        await message.answer("❌ Нет активной игры в этом чате.")
+        return
+    
+    toggle_debug()
+    await message.answer(get_debug_command_response(), parse_mode="Markdown")
+    
+    # Логируем переключение
+    log_debug(f"Команда /logs выполнена в чате {chat_id}")
 
 @dp.message(Command("play"))
 async def cmd_play(message: types.Message):
@@ -2177,6 +2219,7 @@ async def main():
     app.router.add_options('/api/{path:.*}', handle_options)
     
     app.router.add_get('/api/test', api_test)
+    app.router.add_get('/api/debug/status', api_debug_status)  # ★★★ ДОБАВЛЯЕМ API ОТЛАДКИ ★★★
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
     app.router.add_post('/api/game/start', api_start_game)
@@ -2195,6 +2238,7 @@ async def main():
     print(f"✅ Сервер запущен на порту {PORT}")
     print(f"📱 Mini App: {WEBAPP_URL}")
     print(f"🧪 Тестовый API: {WEBAPP_URL}/api/test")
+    print(f"📡 API отладки: {WEBAPP_URL}/api/debug/status")
     
     await site.start()
     await asyncio.Event().wait()
