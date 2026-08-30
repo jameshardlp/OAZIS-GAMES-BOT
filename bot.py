@@ -571,11 +571,8 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 if (data.status === 'success') {{
                     if (data.all_ready) {{
                         debugLog('🔥 Все готовы! Начинаем голосование!');
-                        // ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СОСТОЯНИЕ ★★★
                         await refreshGameState();
-                        // ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ UI ★★★
                         updateUI();
-                        // ★★★ ЗАПУСКАЕМ ГОЛОСОВАНИЕ ★★★
                         await startVoting();
                     }} else {{
                         debugLog('⏳ Ожидаем остальных игроков... (' + data.ready_count + '/' + data.total_players + ')');
@@ -583,7 +580,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         document.getElementById('continue-btn').style.display = 'block';
                         document.getElementById('continue-btn').disabled = true;
                         
-                        // Автообновление через 2 секунды
                         setTimeout(function() {{
                             refreshGameState();
                         }}, 2000);
@@ -787,13 +783,39 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var container = document.getElementById('cards-container');
             container.innerHTML = '';
             
+            // ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК ★★★
+            var playerInGame = gameState.players.some(function(p) {{
+                return String(p.id) === String(gameState.playerId);
+            }});
+            
+            // ★★★ ЕСЛИ ИГРОК ВЫБЫЛ ★★★
+            if (!playerInGame) {{
+                container.innerHTML = `
+                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #ff4444;">
+                        <h2 style="color:#ff4444;font-size:2rem;">🧟 ВЫ ВЫБЫЛИ</h2>
+                        <p style="opacity:0.7;margin-top:10px;">Вы не попали в убежище...</p>
+                        <p style="opacity:0.5;margin-top:5px;">Наблюдайте за игрой</p>
+                        <button id="spectate-btn" class="btn-neon" style="margin-top:20px;border-color:#ff4444;color:#ff4444;">👀 Наблюдать</button>
+                    </div>
+                `;
+                
+                document.getElementById('reveal-card').style.display = 'none';
+                document.getElementById('continue-btn').style.display = 'none';
+                
+                document.getElementById('spectate-btn')?.addEventListener('click', function() {{
+                    refreshGameState();
+                }});
+                
+                return;
+            }}
+            
+            // ★★★ ЕСЛИ КАРТЫ НЕ ЗАГРУЖЕНЫ ★★★
             if (!gameState.myCards || gameState.myCards.length === 0) {{
                 container.innerHTML = '<p style="opacity:0.7;">Карты не загружены</p>';
                 return;
             }}
             
-            var allRevealed = gameState.myCards.every(function(c) {{ return c.isRevealed; }});
-            
+            // Отображаем карты
             gameState.myCards.forEach(function(card) {{
                 var div = document.createElement('div');
                 div.className = 'character-card';
@@ -824,7 +846,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var revealBtn = document.getElementById('reveal-card');
             var continueBtn = document.getElementById('continue-btn');
             
-            // ★★★ ЕСЛИ СТАТУС 'ready' — ПОКАЗЫВАЕМ КНОПКУ "ПРОДОЛЖИТЬ" ★★★
+            // ★★★ УПРАВЛЕНИЕ КНОПКАМИ ★★★
             if (gameState.status === 'ready') {{
                 revealBtn.style.display = 'none';
                 continueBtn.style.display = 'block';
@@ -1520,22 +1542,6 @@ def bot_decide_vote(game, player_id):
         return random.choice(available)['id']
     return None
 
-async def check_all_ready(game):
-    """Проверяет, все ли игроки готовы продолжить"""
-    if not game:
-        return False
-    
-    # Боты всегда готовы
-    for player in game['players']:
-        if player.get('is_bot', False) and player['id'] not in game.get('players_ready', []):
-            if 'players_ready' not in game:
-                game['players_ready'] = []
-            game['players_ready'].append(player['id'])
-    
-    ready_count = len(game.get('players_ready', []))
-    total_players = len(game['players'])
-    return ready_count >= total_players
-
 async def check_all_revealed(game):
     """Проверяет, все ли игроки открыли карты"""
     if not game:
@@ -1796,6 +1802,17 @@ async def api_continue(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
+        # ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК ★★★
+        player_in_game = any(str(p['id']) == str(player_id) for p in game['players'])
+        if not player_in_game:
+            return web.json_response({
+                'status': 'success',
+                'all_ready': False,
+                'message': 'Игрок выбыл, не участвует',
+                'ready_count': len(game.get('players_ready', [])),
+                'total_players': len(game['players']),
+            })
+        
         if game['status'] != 'ready':
             return web.json_response({'status': 'error', 'message': 'Игра не в состоянии готовности'}, status=400)
         
@@ -1806,7 +1823,7 @@ async def api_continue(request):
             game['players_ready'].append(str(player_id))
             print(f"✅ Игрок {player_id} готов продолжить")
         
-        # Боты всегда готовы
+        # ★★★ БОТЫ ВСЕГДА ГОТОВЫ ★★★
         for p in game['players']:
             if p.get('is_bot', False) and str(p['id']) not in game['players_ready']:
                 game['players_ready'].append(str(p['id']))
