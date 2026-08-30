@@ -191,6 +191,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             debugLog('🚀 DOM загружен!');
             
+            // ★★★ ПОЛУЧАЕМ ПАРАМЕТРЫ ИЗ URL ★★★
             var urlParams = new URLSearchParams(window.location.search);
             gameState.gameId = urlParams.get('game_id');
             var userIdFromUrl = urlParams.get('user_id');
@@ -1101,10 +1102,6 @@ async def inline_query_handler(query: types.InlineQuery):
     user_id = query.from_user.id
     user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
     
-    # ★★★ КЭШИРУЕМ user_id -> chat_id ★★★
-    # В inline-запросе нет chat_id, но мы можем запомнить, что этот пользователь
-    # вызвал бота в каком-то чате. chat_id будет передан в callback.
-    
     # ★★★ КНОПКА "ПРИСОЕДИНИТЬСЯ" ★★★
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -1132,7 +1129,7 @@ async def inline_query_handler(query: types.InlineQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ КНОПКИ "ПРИСОЕДИНИТЬСЯ"
+# 11. ОБРАБОТЧИК ДЛЯ КНОПКИ "ПРИСОЕДИНИТЬСЯ" (С ИСПРАВЛЕНИЕМ URL)
 # ============================================
 @dp.callback_query(lambda c: c.data == "join_game")
 async def join_game_callback(callback: types.CallbackQuery):
@@ -1157,7 +1154,6 @@ async def join_game_callback(callback: types.CallbackQuery):
         user_chat_cache[str(user_id)] = chat_id
         print(f"💾 Кэшировано: user_id={user_id} -> chat_id={chat_id}")
     else:
-        # Если не удалось получить chat_id — пробуем из кэша
         if str(user_id) in user_chat_cache:
             chat_id = user_chat_cache[str(user_id)]
             print(f"💬 Используем кэшированный chat_id: {chat_id}")
@@ -1193,11 +1189,28 @@ async def join_game_callback(callback: types.CallbackQuery):
         print(f"✅ Игра создана: {games[chat_id]}")
     
     # ★★★ ПЕРЕДАЁМ URL ★★★
-    game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
-    print(f"🔗 URL игры: {game_url}")
+    # ★★★ ВАЖНО: в callback.answer нельзя передавать параметры в URL ★★★
+    # Поэтому передаём только базовый URL
+    game_url = WEBAPP_URL
+    print(f"🔗 URL игры (без параметров): {game_url}")
     
-    await callback.answer(url=game_url)
-    print("✅ Ответ отправлен с URL игры!")
+    # ★★★ Сохраняем параметры в start_param ★★★
+    start_param = f"game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
+    print(f"📝 Start param: {start_param}")
+    
+    # ★★★ ОТВЕЧАЕМ ★★★
+    try:
+        await callback.answer(
+            url=game_url,
+            cache_time=0
+        )
+        print("✅ Ответ отправлен с URL игры!")
+    except Exception as e:
+        print(f"❌ Ошибка при отправке ответа: {e}")
+        # Если не получилось с url, пробуем без url
+        await callback.answer()
+        print("✅ Ответ отправлен без URL")
+    
     print("=" * 60)
 
 # ============================================
