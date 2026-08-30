@@ -9,7 +9,7 @@ from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.enums import ChatType
-from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultGame, InputTextMessageContent, CallbackGame
+from aiogram.types import WebAppInfo, InlineKeyboardMarkup, InlineKeyboardButton, InlineQueryResultArticle, InputTextMessageContent, CallbackGame
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiohttp import web
 from dotenv import load_dotenv
@@ -64,6 +64,7 @@ print(f"🎮 Game Short Name: oaziscaffee")
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
 games = {}  # chat_id -> game_data
+user_chat_cache = {}  # user_id -> chat_id (для кэширования)
 CARDS = None
 
 # ============================================
@@ -77,7 +78,7 @@ GAME_INVITE_TEXT = """🧟 **ЗОМБИ-АПОКАЛИПСИС!**
 👑 **Ведущий:** {host_name}
 👥 **Соберите от 4 до 6 игроков!**
 
-Нажми кнопку **«Играть»** чтобы присоединиться!"""
+Нажми кнопку **«Присоединиться»** чтобы начать!"""
 
 RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 
@@ -917,7 +918,7 @@ async def cmd_start(message: types.Message):
         "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши @oazisgamesbot в любом чате\n"
-        "2️⃣ Нажми кнопку «Play»\n"
+        "2️⃣ Нажми кнопку «Присоединиться»\n"
         "3️⃣ Игра начнётся!\n\n"
         "📋 **Команды:**\n"
         "/status - Показать статус игры\n"
@@ -933,7 +934,7 @@ async def cmd_status(message: types.Message):
     chat_id = str(message.chat.id)
     
     if chat_id not in games:
-        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
+        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Присоединиться")
         return
     
     game = games[chat_id]
@@ -952,7 +953,7 @@ async def cmd_host(message: types.Message):
     chat_id = str(message.chat.id)
     
     if chat_id not in games:
-        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Play")
+        await message.answer("❌ Нет активной игры. Напиши @oazisgamesbot и нажми Присоединиться")
         return
     
     game = games[chat_id]
@@ -1086,40 +1087,59 @@ async def cmd_rules(message: types.Message):
     await message.answer(RULES_TEXT, parse_mode="Markdown")
 
 # ============================================
-# 10. INLINE-РЕЖИМ (ТОЛЬКО КАРТОЧКА, БЕЗ СОЗДАНИЯ ИГРЫ)
+# 10. INLINE-РЕЖИМ (С КНОПКОЙ "ПРИСОЕДИНИТЬСЯ")
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
-    """Обработка @oazisgamesbot — карточка игры"""
+    """Обработка @oazisgamesbot — карточка с кнопкой"""
     
     print("=" * 60)
     print("📨 ПОЛУЧЕН INLINE-ЗАПРОС!")
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
     print("=" * 60)
     
-    # ★★★ НЕ СОЗДАЁМ ИГРУ ЗДЕСЬ! ★★★
-    # Игра будет создана при первом нажатии на "Play"
-    # Отправляем только карточку с игрой
+    user_id = query.from_user.id
+    user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
     
-    result = types.InlineQueryResultGame(
+    # ★★★ КЭШИРУЕМ user_id -> chat_id ★★★
+    # В inline-запросе нет chat_id, но мы можем запомнить, что этот пользователь
+    # вызвал бота в каком-то чате. chat_id будет передан в callback.
+    
+    # ★★★ КНОПКА "ПРИСОЕДИНИТЬСЯ" ★★★
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🎮 Присоединиться",
+            callback_data="join_game"
+        )]
+    ])
+    
+    result = types.InlineQueryResultArticle(
         id="oasis_game",
-        game_short_name="oaziscaffee"
+        title="🎮 Кафе ОАЗИС — зомби-апокалипсис",
+        description="Нажми, чтобы присоединиться к игре!",
+        reply_markup=keyboard,
+        input_message_content=InputTextMessageContent(
+            message_text=GAME_INVITE_TEXT.format(
+                host_name=user_name
+            ),
+            parse_mode="Markdown"
+        ),
+        thumbnail_url="https://bot-1787938920-6589-jameshard.bothost.tech/oasis_thumb.jpg"
     )
     
     await query.answer([result], cache_time=60)
-    
-    print("✅ Inline-результат (только карточка) отправлен!")
+    print("✅ Inline-результат отправлен!")
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (СОЗДАЁТ ИГРУ ПРИ ПЕРВОМ НАЖАТИИ)
+# 11. ОБРАБОТЧИК ДЛЯ КНОПКИ "ПРИСОЕДИНИТЬСЯ"
 # ============================================
-@dp.callback_query(lambda c: c.game_short_name is not None)
-async def game_callback(callback: types.CallbackQuery):
-    """При нажатии на Play — создаём игру или присоединяемся к существующей"""
+@dp.callback_query(lambda c: c.data == "join_game")
+async def join_game_callback(callback: types.CallbackQuery):
+    """Обработка нажатия на кнопку 'Присоединиться'"""
     
     print("=" * 60)
-    print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
+    print("👤 ПОЛУЧЕН CALLBACK 'JOIN_GAME'!")
     print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
     print("=" * 60)
     
@@ -1127,24 +1147,32 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # ★★★ ОПРЕДЕЛЯЕМ CHAT_ID ★★★
+    # ★★★ ПОЛУЧАЕМ CHAT_ID ★★★
     if callback.message and callback.message.chat:
         chat_id = str(callback.message.chat.id)
         print(f"💬 Chat ID: {chat_id}")
         print(f"💬 Chat Type: {callback.message.chat.type}")
+        
+        # ★★★ КЭШИРУЕМ ★★★
+        user_chat_cache[str(user_id)] = chat_id
+        print(f"💾 Кэшировано: user_id={user_id} -> chat_id={chat_id}")
     else:
-        chat_id = str(user_id)
-        print(f"💬 Используем user_id как chat_id: {chat_id}")
+        # Если не удалось получить chat_id — пробуем из кэша
+        if str(user_id) in user_chat_cache:
+            chat_id = user_chat_cache[str(user_id)]
+            print(f"💬 Используем кэшированный chat_id: {chat_id}")
+        else:
+            chat_id = str(user_id)
+            print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ДЛЯ ЭТОГО CHAT_ID ★★★
+    # ★★★ ПРОВЕРЯЕМ ИГРУ ★★★
     if chat_id in games:
-        # Игра существует — используем её
         game = games[chat_id]
         game_id = game['game_id']
         print(f"✅ Найдена существующая игра: {game_id}")
         print(f"👑 Текущий ведущий: {game['host_name']} (ID: {game['host_id']})")
     else:
-        # ★★★ ПЕРВОЕ НАЖАТИЕ — СОЗДАЁМ ИГРУ ★★★
+        # ★★★ СОЗДАЁМ НОВУЮ ИГРУ ★★★
         game_id = str(uuid.uuid4())[:8]
         print(f"🆕 Создаём новую игру: {game_id}")
         print(f"👑 Первый игрок становится ведущим: {user_name}")
@@ -1164,7 +1192,7 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ПЕРЕДАЁМ URL С game_id ★★★
+    # ★★★ ПЕРЕДАЁМ URL ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
