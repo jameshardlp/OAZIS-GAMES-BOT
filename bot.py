@@ -95,7 +95,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА (С КНОПКОЙ "ПРОДОЛЖИТЬ")
+# 6. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -167,7 +167,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             maxRounds: 5,
             status: 'waiting',
             isHost: false,
-            readyToContinue: false,
         }};
 
         async function refreshGameState(retryCount) {{
@@ -192,8 +191,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('📦 Состояние: ' + JSON.stringify(data));
                 
                 if (data.game_id) {{
-                    var oldStatus = gameState.status;
-                    
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
                     gameState.isHost = data.is_host || false;
@@ -207,8 +204,8 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         await startVoting();
                     }}
                     
-                    if (gameState.status === 'playing') {{
-                        debugLog('🃏 Статус "playing" — загружаем карты');
+                    if (gameState.status === 'playing' || gameState.status === 'ready') {{
+                        debugLog('🃏 Статус "' + gameState.status + '" — загружаем карты');
                         await getMyCards();
                     }}
                     
@@ -381,7 +378,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     
                     updateUI();
                     
-                    if (gameState.status === 'playing') {{
+                    if (gameState.status === 'playing' || gameState.status === 'ready') {{
                         await getMyCards();
                     }}
                     
@@ -528,14 +525,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     renderCards();
                     debugLog('✅ Карта открыта, осталось: ' + gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length);
                     
-                    // Проверяем, все ли карты открыты
-                    var remaining = gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length;
-                    if (remaining === 0) {{
-                        debugLog('🔄 Все карты открыты! Показываем кнопку "Продолжить"');
-                        document.getElementById('continue-btn').style.display = 'block';
-                        document.getElementById('reveal-card').style.display = 'none';
-                    }}
-                    
                     setTimeout(function() {{
                         refreshGameState();
                     }}, 1500);
@@ -562,6 +551,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
         async function continueGame() {{
             debugLog('▶️ КНОПКА "ПРОДОЛЖИТЬ" НАЖАТА!');
             
+            // Сразу скрываем кнопку, чтобы не нажали дважды
+            document.getElementById('continue-btn').style.display = 'none';
+            document.getElementById('continue-btn').disabled = true;
+            
             try {{
                 var response = await fetch(API_BASE + '/api/game/continue', {{
                     method: 'POST',
@@ -573,30 +566,39 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }});
                 
                 var data = await response.json();
-                debugLog('📦 Ответ: ' + JSON.stringify(data));
+                debugLog('📦 Ответ continue: ' + JSON.stringify(data));
                 
                 if (data.status === 'success') {{
-                    // Скрываем кнопку "Продолжить" пока все не нажмут
-                    document.getElementById('continue-btn').style.display = 'none';
-                    document.getElementById('continue-btn').disabled = true;
-                    debugLog('✅ Готовность подтверждена! Ожидаем остальных игроков...');
-                    
                     if (data.all_ready) {{
                         debugLog('🔥 Все готовы! Начинаем голосование!');
-                        document.getElementById('continue-btn').textContent = '⏳ Ожидание...';
-                        setTimeout(function() {{
-                            refreshGameState();
-                        }}, 1000);
+                        // ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ СОСТОЯНИЕ ★★★
+                        await refreshGameState();
+                        // ★★★ ПРИНУДИТЕЛЬНО ОБНОВЛЯЕМ UI ★★★
+                        updateUI();
+                        // ★★★ ЗАПУСКАЕМ ГОЛОСОВАНИЕ ★★★
+                        await startVoting();
                     }} else {{
-                        document.getElementById('continue-btn').textContent = '⏳ Ожидание остальных...';
+                        debugLog('⏳ Ожидаем остальных игроков... (' + data.ready_count + '/' + data.total_players + ')');
+                        document.getElementById('continue-btn').textContent = '⏳ Ожидание остальных (' + data.ready_count + '/' + data.total_players + ')';
+                        document.getElementById('continue-btn').style.display = 'block';
+                        document.getElementById('continue-btn').disabled = true;
+                        
                         // Автообновление через 2 секунды
                         setTimeout(function() {{
                             refreshGameState();
                         }}, 2000);
                     }}
+                }} else {{
+                    debugLog('❌ Ошибка: ' + (data.message || 'неизвестно'));
+                    document.getElementById('continue-btn').style.display = 'block';
+                    document.getElementById('continue-btn').textContent = '▶️ Продолжить';
+                    document.getElementById('continue-btn').disabled = false;
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка продолжения: ' + error.message);
+                document.getElementById('continue-btn').style.display = 'block';
+                document.getElementById('continue-btn').textContent = '▶️ Продолжить';
+                document.getElementById('continue-btn').disabled = false;
             }}
         }}
 
@@ -619,7 +621,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.status === 'success') {{
                     renderVotingList(data.players);
-                    // Активируем кнопку голосования
                     document.getElementById('vote-btn').disabled = false;
                 }}
             }} catch (error) {{
@@ -736,10 +737,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 lobby.style.display = 'none';
                 gameArea.style.display = 'block';
                 document.getElementById('character-cards').style.display = 'none';
-                document.getElementById('continue-btn').style.display = 'none';
                 votingArea.style.display = 'block';
                 results.style.display = 'none';
-            }} else if (gameState.status === 'playing') {{
+            }} else if (gameState.status === 'playing' || gameState.status === 'ready') {{
                 lobby.style.display = 'none';
                 gameArea.style.display = 'block';
                 document.getElementById('character-cards').style.display = 'block';
@@ -792,7 +792,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 return;
             }}
             
-            // Проверяем, все ли карты открыты
             var allRevealed = gameState.myCards.every(function(c) {{ return c.isRevealed; }});
             
             gameState.myCards.forEach(function(card) {{
@@ -822,19 +821,23 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             var remaining = gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length;
             
-            // ★★★ УПРАВЛЕНИЕ КНОПКАМИ ★★★
             var revealBtn = document.getElementById('reveal-card');
             var continueBtn = document.getElementById('continue-btn');
             
-            if (remaining === 0) {{
-                // Все карты открыты → показываем "Продолжить"
+            // ★★★ ЕСЛИ СТАТУС 'ready' — ПОКАЗЫВАЕМ КНОПКУ "ПРОДОЛЖИТЬ" ★★★
+            if (gameState.status === 'ready') {{
+                revealBtn.style.display = 'none';
+                continueBtn.style.display = 'block';
+                continueBtn.textContent = '▶️ Продолжить';
+                continueBtn.disabled = false;
+                debugLog('🔄 Статус "ready", кнопка "Продолжить" активна');
+            }} else if (remaining === 0) {{
                 revealBtn.style.display = 'none';
                 continueBtn.style.display = 'block';
                 continueBtn.textContent = '▶️ Продолжить';
                 continueBtn.disabled = false;
                 debugLog('🔄 Все карты открыты, кнопка "Продолжить" активна');
             }} else {{
-                // Есть ещё карты → показываем "Открыть карту"
                 revealBtn.style.display = 'block';
                 revealBtn.textContent = '🃏 Открыть карту (осталось: ' + remaining + ')';
                 revealBtn.disabled = false;
@@ -868,7 +871,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                             await startVoting();
                         }}
                         
-                        if (data.status === 'playing') {{
+                        if (data.status === 'playing' || data.status === 'ready') {{
                             await getMyCards();
                         }}
                     }}
@@ -1522,15 +1525,15 @@ async def check_all_ready(game):
     if not game:
         return False
     
-    ready_count = len(game.get('players_ready', []))
-    total_players = len(game['players'])
-    
     # Боты всегда готовы
     for player in game['players']:
         if player.get('is_bot', False) and player['id'] not in game.get('players_ready', []):
+            if 'players_ready' not in game:
+                game['players_ready'] = []
             game['players_ready'].append(player['id'])
     
     ready_count = len(game.get('players_ready', []))
+    total_players = len(game['players'])
     return ready_count >= total_players
 
 async def check_all_revealed(game):
@@ -1546,6 +1549,7 @@ async def check_all_revealed(game):
     
     if all_revealed and game['status'] == 'playing':
         game['status'] = 'ready'
+        game['players_ready'] = []
         await bot.send_message(
             game['chat_id'],
             f"📢 Все игроки открыли карты!\n\nНажмите **«Продолжить»** в приложении, чтобы перейти к голосованию.",
@@ -1795,7 +1799,6 @@ async def api_continue(request):
         if game['status'] != 'ready':
             return web.json_response({'status': 'error', 'message': 'Игра не в состоянии готовности'}, status=400)
         
-        # Добавляем игрока в список готовых
         if 'players_ready' not in game:
             game['players_ready'] = []
         
@@ -1803,7 +1806,12 @@ async def api_continue(request):
             game['players_ready'].append(str(player_id))
             print(f"✅ Игрок {player_id} готов продолжить")
         
-        # Проверяем, все ли готовы
+        # Боты всегда готовы
+        for p in game['players']:
+            if p.get('is_bot', False) and str(p['id']) not in game['players_ready']:
+                game['players_ready'].append(str(p['id']))
+                print(f"🤖 Бот {p['name']} готов продолжить")
+        
         all_ready = len(game['players_ready']) >= len(game['players'])
         
         if all_ready:
@@ -1982,7 +1990,7 @@ async def main():
     app.router.add_post('/api/game/start', api_start_game)
     app.router.add_post('/api/game/cards', api_get_cards)
     app.router.add_post('/api/game/reveal', api_reveal_card)
-    app.router.add_post('/api/game/continue', api_continue)  # ★★★ НОВЫЙ ЭНДПОИНТ ★★★
+    app.router.add_post('/api/game/continue', api_continue)
     app.router.add_post('/api/game/voting/players', api_get_voting_players)
     app.router.add_post('/api/game/vote', api_submit_vote)
     
