@@ -94,7 +94,7 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 🎯 **Главное — харизма и убеждение!**"""
 
 # ============================================
-# 6. HTML СТРАНИЦА (СОКРАЩЕНА ДЛЯ ЭКОНОМИИ МЕСТА)
+# 6. HTML СТРАНИЦА
 # ============================================
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
@@ -738,7 +738,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
 </html>'''
 
 # ============================================
-# 7. CSS СТИЛИ (СОКРАЩЕН)
+# 7. CSS СТИЛИ
 # ============================================
 CSS_STYLES = '''* {
     margin: 0;
@@ -1354,14 +1354,34 @@ def bot_reveal_all_cards(game):
             print(f"🤖 Бот {player['name']} открыл все карты")
 
 def bot_decide_vote(game, player_id):
-    """Бот выбирает, за кого голосовать"""
+    """Бот выбирает, за кого голосовать (случайно)"""
     if not game or not game['players']:
         return None
     
-    available = [p for p in game['players'] if p['id'] != player_id and not p.get('is_bot', False)]
+    # ★★★ БОТЫ ГОЛОСУЮТ ЗА ВСЕХ, КРОМЕ СЕБЯ ★★★
+    available = [p for p in game['players'] if p['id'] != player_id]
+    
     if available:
         return random.choice(available)['id']
     return None
+
+async def check_all_revealed(game):
+    """Проверяет, все ли игроки открыли карты"""
+    if not game:
+        return
+    
+    all_revealed = True
+    for player in game['players']:
+        if len(player.get('revealed', [])) < len(player.get('cards', [])):
+            all_revealed = False
+            break
+    
+    if all_revealed and game['status'] == 'playing':
+        game['status'] = 'voting'
+        await bot.send_message(
+            game['chat_id'],
+            f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки открыли карты. Голосуйте в приложении!"
+        )
 
 # ============================================
 # 13. API ОБРАБОТЧИКИ
@@ -1505,24 +1525,6 @@ async def api_start_game(request):
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
-async def check_all_revealed(game):
-    """Проверяет, все ли игроки открыли карты"""
-    if not game:
-        return
-    
-    all_revealed = True
-    for player in game['players']:
-        if len(player.get('revealed', [])) < len(player.get('cards', [])):
-            all_revealed = False
-            break
-    
-    if all_revealed and game['status'] == 'playing':
-        game['status'] = 'voting'
-        await bot.send_message(
-            game['chat_id'],
-            f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки открыли карты. Голосуйте в приложении!"
-        )
-
 async def api_get_cards(request):
     print(f"📨 GET CARDS запрос")
     try:
@@ -1583,18 +1585,7 @@ async def api_reveal_card(request):
         bot_reveal_all_cards(game)
         
         # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
-        all_revealed = True
-        for p in game['players']:
-            if len(p['revealed']) < len(p['cards']):
-                all_revealed = False
-                break
-        
-        if all_revealed and game['status'] == 'playing':
-            game['status'] = 'voting'
-            await bot.send_message(
-                game['chat_id'],
-                f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки открыли карты. Голосуйте в приложении!"
-            )
+        await check_all_revealed(game)
         
         return web.json_response({
             'status': 'success',
@@ -1621,6 +1612,7 @@ async def api_get_voting_players(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
+        # ★★★ ПОКАЗЫВАЕМ ВСЕХ ИГРОКОВ (ВКЛЮЧАЯ БОТОВ) ★★★
         players_for_vote = [
             {
                 'id': str(p['id']),
@@ -1628,7 +1620,7 @@ async def api_get_voting_players(request):
                 'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
-            if str(p['id']) != str(player_id) and not p.get('is_bot', False)
+            if str(p['id']) != str(player_id)  # Только не голосующий
         ]
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
