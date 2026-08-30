@@ -1097,37 +1097,24 @@ async def inline_query_handler(query: types.InlineQuery):
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
     print("=" * 60)
     
-    # ★★★ ИСПОЛЬЗУЕМ CHAT_ID ИЗ QUERY ★★★
-    # В inline-запросе нет chat_id, но мы можем использовать from_user.id
-    # Если пользователь в группе, это будет ID группы? Нет.
-    # Но мы будем использовать ID пользователя как chat_id для inline-режима.
-    # Для групповых игр нужно использовать общий chat_id, но в inline-режиме
-    # мы не можем получить chat_id группы.
-    # Поэтому:
-    # - В inline-режиме используем user_id как chat_id
-    # - В game_callback используем chat_id из callback.message.chat.id
-    
     user_id = query.from_user.id
     user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
     
-    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ ИГРА ДЛЯ ЭТОГО ПОЛЬЗОВАТЕЛЯ ★★★
-    # Ищем игру, где chat_id == str(user_id) (личная игра)
-    # Для групповых игр игра будет создана в game_callback с chat_id группы
-    game = None
-    game_id = None
+    # Для inline-режима используем user_id как chat_id
+    # (реальный chat_id будет определён в game_callback)
+    chat_id = str(user_id)
     
-    # Проверяем, есть ли игра у этого пользователя
-    if str(user_id) in games:
-        game = games[str(user_id)]
+    # Проверяем, есть ли игра для этого пользователя
+    if chat_id in games:
+        game = games[chat_id]
         game_id = game['game_id']
         print(f"✅ Найдена игра для пользователя: {game_id}")
-    
-    # Если нет игры, создаём
-    if not game:
+    else:
+        # Создаём игру для пользователя (будет использоваться в личных чатах)
         game_id = str(uuid.uuid4())[:8]
-        games[str(user_id)] = {
+        games[chat_id] = {
             'game_id': game_id,
-            'chat_id': str(user_id),
+            'chat_id': chat_id,
             'players': [],
             'status': 'waiting',
             'round': 0,
@@ -1140,7 +1127,7 @@ async def inline_query_handler(query: types.InlineQuery):
         }
         print(f"🆕 Создана игра для пользователя: {game_id}")
     
-    # ★★★ ОТПРАВЛЯЕМ КАРТОЧКУ С ИГРОЙ ★★★
+    # Отправляем карточку с игрой
     result = types.InlineQueryResultGame(
         id="oasis_game",
         game_short_name="oaziscaffee"
@@ -1152,7 +1139,7 @@ async def inline_query_handler(query: types.InlineQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ПРАВИЛЬНЫМ ХОСТОМ)
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
@@ -1168,31 +1155,31 @@ async def game_callback(callback: types.CallbackQuery):
     user_name_encoded = user_name.replace(' ', '%20')
     
     # ★★★ ОПРЕДЕЛЯЕМ CHAT_ID ★★★
-    # Если есть message и chat — используем chat_id группы/чата
     if callback.message and callback.message.chat:
         chat_id = str(callback.message.chat.id)
         print(f"💬 Chat ID: {chat_id}")
     else:
-        # Если нет message (например, из inline-режима) — используем user_id
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ДЛЯ ЭТОГО CHAT_ID ★★★
+    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ★★★
     if chat_id in games:
+        # Игра существует — просто присоединяемся
         game = games[chat_id]
         game_id = game['game_id']
-        print(f"✅ Найдена существующая игра: {game_id} для чата {chat_id}")
+        print(f"✅ Найдена существующая игра: {game_id}")
+        print(f"👑 Текущий ведущий: {game['host_name']} (ID: {game['host_id']})")
         
-        # Проверяем, есть ли уже игрок в игре
-        player_exists = any(str(p['id']) == str(user_id) for p in game['players'])
-        if player_exists:
-            print(f"👤 Игрок {user_id} уже в игре")
+        # Проверяем, не является ли этот пользователь уже хостом
+        if str(game['host_id']) == str(user_id):
+            print(f"👑 Пользователь уже является ведущим")
         else:
-            print(f"👤 Игрок {user_id} ещё не в игре — добавится при входе")
+            print(f"👤 Пользователь присоединяется как игрок")
     else:
-        # ★★★ СОЗДАЁМ НОВУЮ ИГРУ ★★★
+        # ★★★ ИГРЫ НЕТ — СОЗДАЁМ НОВУЮ, ПЕРВЫЙ ИГРОК СТАНОВИТСЯ ХОСТОМ ★★★
         game_id = str(uuid.uuid4())[:8]
-        print(f"🆕 Создаём новую игру: {game_id} для чата {chat_id}")
+        print(f"🆕 Создаём новую игру: {game_id}")
+        print(f"👑 Первый игрок становится ведущим: {user_name}")
         
         games[chat_id] = {
             'game_id': game_id,
@@ -1201,7 +1188,7 @@ async def game_callback(callback: types.CallbackQuery):
             'status': 'waiting',
             'round': 0,
             'max_rounds': 5,
-            'host_id': str(user_id),
+            'host_id': str(user_id),  # ★★★ ПЕРВЫЙ ИГРОК — ХОСТ ★★★
             'host_name': user_name,
             'created_at': datetime.now().isoformat(),
             'votes': {},
@@ -1209,10 +1196,9 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ПЕРЕДАЁМ URL С game_id ★★★
+    # ★★★ ПЕРЕДАЁМ URL ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
-    print(f"👤 Имя в URL: {user_name}")
     
     await callback.answer(url=game_url)
     print("✅ Ответ отправлен с URL игры!")
@@ -1299,7 +1285,6 @@ async def api_get_state(request):
         print(f"🔍 Поиск игры: {game_id}")
         print(f"👤 Player ID: {player_id}")
         
-        # Ищем игру по game_id
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
@@ -1344,7 +1329,6 @@ async def api_join_game(request):
         print(f"👤 Игрок: {player_name} (ID: {player_id})")
         print(f"🎮 Игра: {game_id}")
         
-        # Ищем игру по game_id
         game = None
         for g in games.values():
             if g['game_id'] == game_id:
