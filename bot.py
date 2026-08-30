@@ -1086,7 +1086,7 @@ async def cmd_rules(message: types.Message):
     await message.answer(RULES_TEXT, parse_mode="Markdown")
 
 # ============================================
-# 10. INLINE-РЕЖИМ
+# 10. INLINE-РЕЖИМ (ТОЛЬКО КАРТОЧКА, БЕЗ СОЗДАНИЯ ИГРЫ)
 # ============================================
 @dp.inline_query()
 async def inline_query_handler(query: types.InlineQuery):
@@ -1097,36 +1097,10 @@ async def inline_query_handler(query: types.InlineQuery):
     print(f"👤 Пользователь: {query.from_user.id} ({query.from_user.first_name})")
     print("=" * 60)
     
-    user_id = query.from_user.id
-    user_name = query.from_user.first_name or query.from_user.username or 'Игрок'
+    # ★★★ НЕ СОЗДАЁМ ИГРУ ЗДЕСЬ! ★★★
+    # Игра будет создана при первом нажатии на "Play"
+    # Отправляем только карточку с игрой
     
-    # Для inline-режима используем user_id как chat_id
-    chat_id = str(user_id)
-    
-    # Проверяем, есть ли игра для этого пользователя
-    if chat_id in games:
-        game = games[chat_id]
-        game_id = game['game_id']
-        print(f"✅ Найдена игра для пользователя: {game_id}")
-    else:
-        # Создаём игру для пользователя (будет использоваться в личных чатах)
-        game_id = str(uuid.uuid4())[:8]
-        games[chat_id] = {
-            'game_id': game_id,
-            'chat_id': chat_id,
-            'players': [],
-            'status': 'waiting',
-            'round': 0,
-            'max_rounds': 5,
-            'host_id': str(user_id),
-            'host_name': user_name,
-            'created_at': datetime.now().isoformat(),
-            'votes': {},
-            'eliminated': [],
-        }
-        print(f"🆕 Создана игра для пользователя: {game_id}")
-    
-    # Отправляем карточку с игрой
     result = types.InlineQueryResultGame(
         id="oasis_game",
         game_short_name="oaziscaffee"
@@ -1134,67 +1108,43 @@ async def inline_query_handler(query: types.InlineQuery):
     
     await query.answer([result], cache_time=60)
     
-    print("✅ Inline-результат отправлен!")
+    print("✅ Inline-результат (только карточка) отправлен!")
     print("=" * 60)
 
 # ============================================
-# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (С ПРАВИЛЬНЫМ ХОСТОМ И ЛОГАМИ)
+# 11. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES (СОЗДАЁТ ИГРУ ПРИ ПЕРВОМ НАЖАТИИ)
 # ============================================
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
-    """При нажатии на Play — передаём ссылку с game_id"""
+    """При нажатии на Play — создаём игру или присоединяемся к существующей"""
     
     print("=" * 60)
     print("🎮 ПОЛУЧЕН CALLBACK ОТ ИГРЫ!")
     print(f"👤 Пользователь: {callback.from_user.id} ({callback.from_user.first_name})")
-    print(f"📝 callback.data: {callback.data}")
-    print(f"📝 callback.message: {callback.message}")
     print("=" * 60)
     
     user_id = callback.from_user.id
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # ★★★ ПЫТАЕМСЯ ПОЛУЧИТЬ CHAT_ID ИЗ РАЗНЫХ ИСТОЧНИКОВ ★★★
-    chat_id = None
-    chat_type = None
-    
-    # Способ 1: из callback.message
-    if callback.message:
-        print("✅ callback.message существует")
-        if callback.message.chat:
-            chat_id = str(callback.message.chat.id)
-            chat_type = str(callback.message.chat.type)
-            print(f"💬 Chat ID из message: {chat_id}")
-            print(f"💬 Chat Type: {chat_type}")
-        else:
-            print("⚠️ callback.message.chat = None")
+    # ★★★ ОПРЕДЕЛЯЕМ CHAT_ID ★★★
+    if callback.message and callback.message.chat:
+        chat_id = str(callback.message.chat.id)
+        print(f"💬 Chat ID: {chat_id}")
+        print(f"💬 Chat Type: {callback.message.chat.type}")
     else:
-        print("⚠️ callback.message = None")
-    
-    # Способ 2: если callback.message нет, но есть callback.inline_message_id
-    if callback.inline_message_id:
-        print(f"💬 Inline message ID: {callback.inline_message_id}")
-    
-    # Если не удалось получить chat_id — используем user_id
-    if not chat_id:
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПРОВЕРЯЕМ ИГРУ ★★★
-    print(f"🔍 Ищем игру для chat_id: {chat_id}")
-    
+    # ★★★ ПРОВЕРЯЕМ, ЕСТЬ ЛИ УЖЕ ИГРА ДЛЯ ЭТОГО CHAT_ID ★★★
     if chat_id in games:
+        # Игра существует — используем её
         game = games[chat_id]
         game_id = game['game_id']
         print(f"✅ Найдена существующая игра: {game_id}")
         print(f"👑 Текущий ведущий: {game['host_name']} (ID: {game['host_id']})")
-        
-        # Проверяем, есть ли игрок в игре
-        player_exists = any(str(p['id']) == str(user_id) for p in game['players'])
-        print(f"👤 Игрок уже в игре? {player_exists}")
     else:
-        # ★★★ ИГРЫ НЕТ — СОЗДАЁМ НОВУЮ ★★★
+        # ★★★ ПЕРВОЕ НАЖАТИЕ — СОЗДАЁМ ИГРУ ★★★
         game_id = str(uuid.uuid4())[:8]
         print(f"🆕 Создаём новую игру: {game_id}")
         print(f"👑 Первый игрок становится ведущим: {user_name}")
@@ -1214,7 +1164,7 @@ async def game_callback(callback: types.CallbackQuery):
         }
         print(f"✅ Игра создана: {games[chat_id]}")
     
-    # ★★★ ПЕРЕДАЁМ URL ★★★
+    # ★★★ ПЕРЕДАЁМ URL С game_id ★★★
     game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
