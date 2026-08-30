@@ -87,12 +87,11 @@ RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
 1️⃣ Каждый раунд игроки открывают по одной карте
 2️⃣ После открытия всех карт — нажмите «Продолжить»
 3️⃣ Когда все готовы — начинается голосование
-4️⃣ Кто набрал больше голосов — выбывает
-5️⃣ Игра длится 5 раундов
+4️⃣ Кто набрал больше голосов — выбывает и становится наблюдателем
+5️⃣ Игра длится до последнего выжившего
 
-🏆 **Победа:** Выжившие после 5 раундов попадают в убежище!
-
-🎯 **Главное — харизма и убеждение!**"""
+🏆 **Победа:** Последний выживший получает кубок!
+👀 **Наблюдатели:** Выбывшие игроки следят за игрой."""
 
 # ============================================
 # 6. HTML СТРАНИЦА
@@ -551,7 +550,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
         async function continueGame() {{
             debugLog('▶️ КНОПКА "ПРОДОЛЖИТЬ" НАЖАТА!');
             
-            // Сразу скрываем кнопку, чтобы не нажали дважды
             document.getElementById('continue-btn').style.display = 'none';
             document.getElementById('continue-btn').disabled = true;
             
@@ -686,7 +684,25 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     document.getElementById('vote-btn').disabled = true;
                     debugLog('✅ Голос учтён!');
                     
-                    if (data.all_voted) {{
+                    if (data.game_finished) {{
+                        debugLog('🏆 Игра завершена!');
+                        if (data.winner === 'human') {{
+                            var tg = window.Telegram.WebApp;
+                            tg.showPopup({{
+                                title: '🏆 ПОБЕДА!',
+                                message: '🎉 ' + data.winner_name + ' выжил в кафе ОАЗИС!',
+                                buttons: [{{text: '🎊 Ура!', type: 'default'}}]
+                            }});
+                        }} else if (data.winner === 'bots') {{
+                            var tg = window.Telegram.WebApp;
+                            tg.showPopup({{
+                                title: '🤖',
+                                message: 'Боты захватили кафе! Люди проиграли.',
+                                buttons: [{{text: '😢 OK', type: 'default'}}]
+                            }});
+                        }}
+                        await refreshGameState();
+                    }} else if (data.all_voted) {{
                         debugLog('🔥 Все проголосовали!');
                         setTimeout(function() {{
                             refreshGameState();
@@ -758,8 +774,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 div.className = 'player-item';
                 var hostBadge = player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : '';
                 var isBot = player.is_bot ? '🤖 ' : '';
+                var observerBadge = player.is_observer ? '👀 ' : '';
                 div.innerHTML = `
-                    <span>${{isBot}}👤 ${{player.name}}</span>
+                    <span>${{observerBadge}}${{isBot}}👤 ${{player.name}}</span>
                     ${{hostBadge}}
                 `;
                 container.appendChild(div);
@@ -783,26 +800,47 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var container = document.getElementById('cards-container');
             container.innerHTML = '';
             
-            // ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК ★★★
-            var playerInGame = gameState.players.some(function(p) {{
-                return String(p.id) === String(gameState.playerId);
-            }});
+            // Проверяем, в режиме ли наблюдения игрок
+            var isObserver = false;
+            for (var i = 0; i < gameState.players.length; i++) {{
+                if (String(gameState.players[i].id) === String(gameState.playerId)) {{
+                    if (gameState.players[i].is_observer) {{
+                        isObserver = true;
+                    }}
+                    break;
+                }}
+            }}
             
-            // ★★★ ЕСЛИ ИГРОК ВЫБЫЛ ★★★
-            if (!playerInGame) {{
+            // ★★★ ЕСЛИ ИГРОК В РЕЖИМЕ НАБЛЮДЕНИЯ ★★★
+            if (isObserver) {{
+                var activePlayers = gameState.players.filter(function(p) {{ return !p.is_observer; }});
+                var humanPlayers = activePlayers.filter(function(p) {{ return !p.is_bot; }});
+                var botPlayers = activePlayers.filter(function(p) {{ return p.is_bot; }});
+                
+                var statusText = '';
+                if (activePlayers.length === 0) {{
+                    statusText = '💀 Все игроки выбыли. Игра завершена.';
+                }} else if (humanPlayers.length === 0 && botPlayers.length > 0) {{
+                    statusText = '🤖 Остались только боты. Игра скоро завершится.';
+                }} else if (humanPlayers.length === 1 && botPlayers.length === 0) {{
+                    statusText = '🏆 Остался 1 игрок! Скоро будет победитель!';
+                }} else {{
+                    statusText = '👥 Активных игроков: ' + activePlayers.length + ' (людей: ' + humanPlayers.length + ', ботов: ' + botPlayers.length + ')';
+                }}
+                
                 container.innerHTML = `
-                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #ff4444;">
-                        <h2 style="color:#ff4444;font-size:2rem;">🧟 ВЫ ВЫБЫЛИ</h2>
-                        <p style="opacity:0.7;margin-top:10px;">Вы не попали в убежище...</p>
-                        <p style="opacity:0.5;margin-top:5px;">Наблюдайте за игрой</p>
-                        <button id="spectate-btn" class="btn-neon" style="margin-top:20px;border-color:#ff4444;color:#ff4444;">👀 Наблюдать</button>
+                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #ff6b35;">
+                        <h2 style="color:#ff6b35;font-size:2rem;">👀 РЕЖИМ НАБЛЮДЕНИЯ</h2>
+                        <p style="opacity:0.8;margin-top:10px;font-size:1.1rem;">${{statusText}}</p>
+                        <p style="opacity:0.5;margin-top:5px;">Следите за игрой в реальном времени!</p>
+                        <button id="refresh-btn" class="btn-neon" style="margin-top:20px;border-color:#ff6b35;color:#ff6b35;">🔄 Обновить</button>
                     </div>
                 `;
                 
                 document.getElementById('reveal-card').style.display = 'none';
                 document.getElementById('continue-btn').style.display = 'none';
                 
-                document.getElementById('spectate-btn')?.addEventListener('click', function() {{
+                document.getElementById('refresh-btn')?.addEventListener('click', function() {{
                     refreshGameState();
                 }});
                 
@@ -852,13 +890,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 continueBtn.style.display = 'block';
                 continueBtn.textContent = '▶️ Продолжить';
                 continueBtn.disabled = false;
-                debugLog('🔄 Статус "ready", кнопка "Продолжить" активна');
             }} else if (remaining === 0) {{
                 revealBtn.style.display = 'none';
                 continueBtn.style.display = 'block';
                 continueBtn.textContent = '▶️ Продолжить';
                 continueBtn.disabled = false;
-                debugLog('🔄 Все карты открыты, кнопка "Продолжить" активна');
             }} else {{
                 revealBtn.style.display = 'block';
                 revealBtn.textContent = '🃏 Открыть карту (осталось: ' + remaining + ')';
@@ -1238,6 +1274,7 @@ async def cmd_add_bots(message: types.Message):
             'username': '',
             'is_host': False,
             'is_bot': True,
+            'is_observer': False,
             'cards': [],
             'revealed': [],
         }
@@ -1263,13 +1300,16 @@ async def cmd_status(message: types.Message):
     game = games[chat_id]
     bot_count = sum(1 for p in game['players'] if p.get('is_bot', False))
     human_count = len(game['players']) - bot_count
+    observer_count = sum(1 for p in game['players'] if p.get('is_observer', False))
+    active_count = len(game['players']) - observer_count
     
     await message.answer(
         f"📊 **Статус игры:**\n"
         f"🎮 Game ID: `{game['game_id']}`\n"
         f"👑 Ведущий: {game['host_name']}\n"
-        f"👥 Игроков: {len(game['players'])} из 6\n"
-        f"👤 Реальных: {human_count}\n"
+        f"👥 Всего игроков: {len(game['players'])}\n"
+        f"👤 Активных: {active_count}\n"
+        f"👀 Наблюдателей: {observer_count}\n"
         f"🤖 Ботов: {bot_count}\n"
         f"📝 Статус: {game['status']}\n"
         f"📊 Раунд: {game['round']} из {game['max_rounds']}",
@@ -1537,30 +1577,40 @@ def bot_decide_vote(game, player_id):
     if not game or not game['players']:
         return None
     
-    available = [p for p in game['players'] if p['id'] != player_id]
+    # Боты голосуют только за активных игроков (не наблюдателей)
+    available = [p for p in game['players'] if str(p['id']) != str(player_id) and not p.get('is_observer', False)]
     if available:
         return random.choice(available)['id']
     return None
 
-async def check_all_revealed(game):
-    """Проверяет, все ли игроки открыли карты"""
+# ============================================
+# 12.5. ФУНКЦИЯ ПРОВЕРКИ ОТКРЫТИЯ ВСЕХ КАРТ
+# ============================================
+def check_all_cards_revealed(game):
+    """Проверяет, открыли ли все живые игроки все карты"""
     if not game:
-        return
+        return False
+    
+    # Только игроки, которые ещё в игре (не выбыли)
+    active_players = [p for p in game['players'] if not p.get('is_observer', False)]
+    
+    if not active_players:
+        return False
     
     all_revealed = True
-    for player in game['players']:
-        if len(player.get('revealed', [])) < len(player.get('cards', [])):
+    for player in active_players:
+        cards = player.get('cards', [])
+        revealed = player.get('revealed', [])
+        if len(revealed) < len(cards):
             all_revealed = False
             break
     
-    if all_revealed and game['status'] == 'playing':
+    if all_revealed:
         game['status'] = 'ready'
         game['players_ready'] = []
-        await bot.send_message(
-            game['chat_id'],
-            f"📢 Все игроки открыли карты!\n\nНажмите **«Продолжить»** в приложении, чтобы перейти к голосованию.",
-            parse_mode="Markdown"
-        )
+        return True
+    
+    return False
 
 # ============================================
 # 13. API ОБРАБОТЧИКИ
@@ -1593,8 +1643,11 @@ async def api_get_state(request):
         print(f"✅ Игра найдена")
         
         player = None
+        is_observer = False
         if player_id:
             player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
+            if player:
+                is_observer = player.get('is_observer', False)
         
         return web.json_response({
             'game_id': game['game_id'],
@@ -1603,6 +1656,7 @@ async def api_get_state(request):
             'round': game['round'],
             'max_rounds': game['max_rounds'],
             'is_host': str(game['host_id']) == str(player_id) if player_id else False,
+            'is_observer': is_observer,
         })
     except Exception as e:
         print(f"❌ Ошибка: {e}")
@@ -1647,6 +1701,7 @@ async def api_join_game(request):
             'username': username,
             'is_host': is_host,
             'is_bot': False,
+            'is_observer': False,
             'cards': [],
             'revealed': [],
         }
@@ -1682,9 +1737,20 @@ async def api_start_game(request):
         if len(game['players']) < 4:
             return web.json_response({'status': 'error', 'message': 'Нужно минимум 4 игрока'}, status=400)
         
+        # ★★★ ПРОВЕРКА: если в игре только боты ★★★
+        if all(p.get('is_bot', False) for p in game['players']):
+            game['status'] = 'finished'
+            await bot.send_message(
+                game['chat_id'],
+                f"🤖 **ПОБЕДА БОТОВ!**\n\n"
+                f"В игре не было людей. Боты захватили кафе ОАЗИС!"
+            )
+            return web.json_response({'status': 'success', 'message': 'Игра завершена (только боты)'})
+        
         for player in game['players']:
             player['cards'] = generate_cards_for_player()
             player['revealed'] = []
+            player['is_observer'] = False
         
         game['players_ready'] = []
         bot_reveal_all_cards(game)
@@ -1752,24 +1818,30 @@ async def api_reveal_card(request):
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
+        # ★★★ ПРОВЕРКА: если игрок в режиме наблюдения ★★★
+        if player.get('is_observer', False):
+            return web.json_response({
+                'status': 'error', 
+                'message': 'Вы в режиме наблюдения и не можете открывать карты'
+            }, status=403)
+        
         if card_index >= len(player['cards']):
             return web.json_response({'status': 'error', 'message': 'Неверный индекс'}, status=400)
         
         card = player['cards'][card_index]
+        if card.get('isRevealed', False):
+            return web.json_response({'status': 'error', 'message': 'Эта карта уже открыта'}, status=400)
+        
         card['isRevealed'] = True
         player['revealed'].append(card)
         
+        # Боты всегда открывают все карты сразу
         bot_reveal_all_cards(game)
         
-        all_revealed = True
-        for p in game['players']:
-            if len(p['revealed']) < len(p['cards']):
-                all_revealed = False
-                break
+        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ (БЕЗ ПЕРЕВОДА В НАБЛЮДАТЕЛИ) ★★★
+        all_revealed = check_all_cards_revealed(game)
         
-        if all_revealed and game['status'] == 'playing':
-            game['status'] = 'ready'
-            game['players_ready'] = []
+        if all_revealed:
             await bot.send_message(
                 game['chat_id'],
                 f"📢 Все игроки открыли карты!\n\nНажмите **«Продолжить»** в приложении, чтобы перейти к голосованию.",
@@ -1781,6 +1853,7 @@ async def api_reveal_card(request):
             'card': card,
             'revealed_cards': player['revealed'],
             'all_revealed': all_revealed,
+            'is_observer': player.get('is_observer', False),
         })
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1802,15 +1875,27 @@ async def api_continue(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК ★★★
-        player_in_game = any(str(p['id']) == str(player_id) for p in game['players'])
-        if not player_in_game:
+        # ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК (НЕ НАБЛЮДАТЕЛЬ) ★★★
+        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
+        if not player:
             return web.json_response({
                 'status': 'success',
                 'all_ready': False,
                 'message': 'Игрок выбыл, не участвует',
                 'ready_count': len(game.get('players_ready', [])),
                 'total_players': len(game['players']),
+                'is_observer': True,
+            })
+        
+        # Если игрок в режиме наблюдения — он не может нажимать "Продолжить"
+        if player.get('is_observer', False):
+            return web.json_response({
+                'status': 'success',
+                'all_ready': False,
+                'message': 'Вы в режиме наблюдения',
+                'ready_count': len(game.get('players_ready', [])),
+                'total_players': len(game['players']),
+                'is_observer': True,
             })
         
         if game['status'] != 'ready':
@@ -1823,13 +1908,13 @@ async def api_continue(request):
             game['players_ready'].append(str(player_id))
             print(f"✅ Игрок {player_id} готов продолжить")
         
-        # ★★★ БОТЫ ВСЕГДА ГОТОВЫ ★★★
+        # Боты всегда готовы
         for p in game['players']:
             if p.get('is_bot', False) and str(p['id']) not in game['players_ready']:
                 game['players_ready'].append(str(p['id']))
                 print(f"🤖 Бот {p['name']} готов продолжить")
         
-        all_ready = len(game['players_ready']) >= len(game['players'])
+        all_ready = len(game['players_ready']) >= len([p for p in game['players'] if not p.get('is_observer', False)])
         
         if all_ready:
             game['status'] = 'voting'
@@ -1837,14 +1922,15 @@ async def api_continue(request):
             print(f"🗳️ Все игроки готовы! Начинаем голосование")
             await bot.send_message(
                 game['chat_id'],
-                f"🗳️ ГОЛОСОВАНИЕ!\n\nВсе игроки готовы. Голосуйте в приложении!"
+                f"🗳️ **ГОЛОСОВАНИЕ!**\n\nВсе игроки готовы. Голосуйте в приложении!\n👀 Наблюдатели следят за голосованием."
             )
         
         return web.json_response({
             'status': 'success',
             'all_ready': all_ready,
             'ready_count': len(game['players_ready']),
-            'total_players': len(game['players']),
+            'total_players': len([p for p in game['players'] if not p.get('is_observer', False)]),
+            'is_observer': player.get('is_observer', False),
         })
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1865,6 +1951,7 @@ async def api_get_voting_players(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
+        # Только активные игроки (не наблюдатели) могут голосовать
         players_for_vote = [
             {
                 'id': str(p['id']),
@@ -1872,7 +1959,7 @@ async def api_get_voting_players(request):
                 'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
             }
             for p in game['players']
-            if str(p['id']) != str(player_id)
+            if str(p['id']) != str(player_id) and not p.get('is_observer', False)
         ]
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
@@ -1896,8 +1983,17 @@ async def api_submit_vote(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
+        # Проверяем, не наблюдатель ли игрок
+        voter = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
+        if voter and voter.get('is_observer', False):
+            return web.json_response({
+                'status': 'error', 
+                'message': 'Вы в режиме наблюдения и не можете голосовать'
+            }, status=403)
+        
         game['votes'][str(player_id)] = str(target_id)
         
+        # Боты голосуют автоматически
         for p in game['players']:
             if p.get('is_bot', False) and str(p['id']) not in game['votes']:
                 target = bot_decide_vote(game, p['id'])
@@ -1905,11 +2001,11 @@ async def api_submit_vote(request):
                     game['votes'][str(p['id'])] = str(target)
                     print(f"🤖 Бот {p['name']} проголосовал за {target}")
         
-        all_voted = len(game['votes']) >= len(game['players'])
+        all_voted = len(game['votes']) >= len([p for p in game['players'] if not p.get('is_observer', False)])
         
         if all_voted:
             vote_results = {}
-            for voter, target in game['votes'].items():
+            for voter_id, target in game['votes'].items():
                 vote_results[target] = vote_results.get(target, 0) + 1
             
             max_votes = max(vote_results.values())
@@ -1917,46 +2013,125 @@ async def api_submit_vote(request):
             
             if eliminated:
                 eliminated_player = eliminated[0]
-                game['eliminated'].append(eliminated_player)
+                
+                # ★★★ ВЫБЫВШИЙ СТАНОВИТСЯ НАБЛЮДАТЕЛЕМ ★★★
+                eliminated_player['is_observer'] = True
+                
+                # Удаляем из активных игроков (но оставляем в списке для истории)
                 game['players'] = [p for p in game['players'] if str(p['id']) != str(eliminated_player['id'])]
+                game['eliminated'].append(eliminated_player)
                 
                 await bot.send_message(
                     game['chat_id'],
-                    f"🧟 ВЫБЫВАЕТ: {eliminated_player['name']}\n\nГолосов: {max_votes} из {len(game['votes'])}\nОсталось: {len(game['players'])} игроков"
+                    f"🧟 **ВЫБЫВАЕТ:** {eliminated_player['name']}\n\n"
+                    f"Голосов: {max_votes} из {len(game['votes'])}\n"
+                    f"Осталось: {len([p for p in game['players'] if not p.get('is_observer', False)])} игроков\n\n"
+                    f"👀 {eliminated_player['name']} теперь наблюдает за игрой!"
                 )
+                
+                # ★★★ ОТПРАВЛЯЕМ ЛИЧНОЕ СООБЩЕНИЕ ВЫБЫВШЕМУ ★★★
+                try:
+                    await bot.send_message(
+                        int(eliminated_player['id']) if str(eliminated_player['id']).isdigit() else eliminated_player['id'],
+                        f"💀 **Вас выгнали из игры!**\n\n"
+                        f"Но вы можете наблюдать за её продолжением.\n"
+                        f"Откройте игру снова, чтобы увидеть, что происходит.",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    print(f"⚠️ Не удалось отправить сообщение выбывшему: {e}")
             
-            if len(game['players']) <= len(game['players']) // 2 + 1:
+            # ★★★ ПРОВЕРЯЕМ, КТО ОСТАЛСЯ ★★★
+            active_players = [p for p in game['players'] if not p.get('is_observer', False)]
+            human_players = [p for p in active_players if not p.get('is_bot', False)]
+            bot_players = [p for p in active_players if p.get('is_bot', False)]
+            
+            # Сценарий 1: Остались только боты → победа ботов
+            if len(human_players) == 0 and len(bot_players) > 0:
                 game['status'] = 'finished'
-                survivors = [p['name'] for p in game['players']]
                 await bot.send_message(
                     game['chat_id'],
-                    f"🏆 ВЫЖИВШИЕ!\n\n{', '.join(survivors)} заперлись в кафе.\nЗомби не прошли! 🎉"
+                    f"🤖 **ПОБЕДА БОТОВ!**\n\n"
+                    f"Все люди выбыли. Боты захватили кафе ОАЗИС!\n"
+                    f"🧟‍♂️ Зомби и боты теперь правят миром..."
                 )
-            else:
-                game['round'] += 1
-                game['status'] = 'playing'
-                game['votes'] = {}
-                game['players_ready'] = []
+                return web.json_response({
+                    'status': 'success',
+                    'all_voted': True,
+                    'game_finished': True,
+                    'winner': 'bots',
+                })
+            
+            # Сценарий 2: Остался 1 человек → победа человека
+            if len(human_players) == 1 and len(bot_players) == 0:
+                game['status'] = 'finished'
+                winner = human_players[0]
+                winner_name = winner['name']
                 
-                for p in game['players']:
+                # Отправляем сообщение с кубком в чат
+                await bot.send_message(
+                    game['chat_id'],
+                    f"🏆 **ПОБЕДА!** 🏆\n\n"
+                    f"🎉 {winner_name} выжил в кафе ОАЗИС!\n"
+                    f"🌟 Единственный человек, переживший зомби-апокалипсис!\n\n"
+                    f"💪 **{winner_name} — легенда!**"
+                )
+                
+                # ★★★ ОТПРАВЛЯЕМ КРАСИВОЕ СООБЩЕНИЕ ПОБЕДИТЕЛЮ ★★★
+                try:
+                    await bot.send_message(
+                        int(winner['id']) if str(winner['id']).isdigit() else winner['id'],
+                        f"🏆 **ТЫ ПОБЕДИЛ!** 🏆\n\n"
+                        f"🎊 Поздравляем! Ты единственный выживший в кафе ОАЗИС!\n"
+                        f"🌟 Ты пережил зомби-апокалипсис и стал легендой!\n\n"
+                        f"💀 {len(game['eliminated'])} игроков не смогли пройти твой путь...\n\n"
+                        f"🔥 Ты — настоящий герой Техаса!",
+                        parse_mode="Markdown"
+                    )
+                except Exception as e:
+                    print(f"⚠️ Не удалось отправить сообщение победителю: {e}")
+                
+                return web.json_response({
+                    'status': 'success',
+                    'all_voted': True,
+                    'game_finished': True,
+                    'winner': 'human',
+                    'winner_name': winner_name,
+                })
+            
+            # Сценарий 3: Игра продолжается
+            game['round'] += 1
+            game['status'] = 'playing'
+            game['votes'] = {}
+            game['players_ready'] = []
+            
+            # Сбрасываем карты для живых игроков
+            for p in game['players']:
+                if not p.get('is_observer', False):
                     p['revealed'] = []
                     for card in p['cards']:
                         card['isRevealed'] = False
-                
-                bot_reveal_all_cards(game)
-                
-                await bot.send_message(
-                    game['chat_id'],
-                    f"📝 РАУНД {game['round']}\n\nНовый раунд! Открывайте карты.\n🤖 Боты уже открыли свои карты!"
-                )
-                
-                await check_all_revealed(game)
+            
+            # Боты снова открывают карты
+            bot_reveal_all_cards(game)
+            
+            await bot.send_message(
+                game['chat_id'],
+                f"📝 **РАУНД {game['round']}**\n\n"
+                f"Новый раунд! Открывайте карты.\n"
+                f"🤖 Боты уже открыли свои карты!\n"
+                f"👀 Наблюдатели следят за игрой.\n"
+                f"👥 Активных игроков: {len([p for p in game['players'] if not p.get('is_observer', False)])}"
+            )
+            
+            # Проверяем, все ли открыли карты
+            check_all_cards_revealed(game)
         
         return web.json_response({
             'status': 'success',
             'all_voted': all_voted,
             'vote_count': len(game['votes']),
-            'total_players': len(game['players']),
+            'total_players': len([p for p in game['players'] if not p.get('is_observer', False)]),
         })
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
