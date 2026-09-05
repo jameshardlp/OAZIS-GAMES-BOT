@@ -139,7 +139,6 @@ class GameEngine:
         return PlayerStatus.ALIVE.value
     
     def get_current_player_id(self) -> Optional[str]:
-        # ★★★ БОЛЬШЕ НЕ ИСПОЛЬЗУЕТСЯ, НО ОСТАВЛЯЕМ ДЛЯ СОВМЕСТИМОСТИ ★★★
         return None
     
     def get_alive_players(self) -> List[str]:
@@ -243,7 +242,6 @@ class GameEngine:
         self._add_log(f"👥 Игроков: {len(self.get_alive_players())}")
         self._add_log(f"💀 Катастрофа: {self.disaster}")
         
-        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЧИНАЮТ ОТКРЫВАТЬ КАРТЫ ★★★
         asyncio.create_task(self._auto_play_bots())
         
         return True
@@ -286,12 +284,8 @@ class GameEngine:
         if not player:
             return {"success": False, "message": "Игрок не найден"}
         
-        # ★★★ БОТЫ ОТКРЫВАЮТ КАРТЫ АВТОМАТИЧЕСКИ ★★★
         if player.get("is_bot", False):
             return self._auto_reveal_bot(player_id)
-        
-        # ★★★ УБИРАЕМ ПРОВЕРКУ НА ХОД ★★★
-        # (каждый может открывать карты в любое время)
         
         round_cards = player["rounds"].get(self.round, [])
         if not round_cards:
@@ -310,7 +304,6 @@ class GameEngine:
         
         self._add_log(f"🃏 {player['name']} открыл карту: {format_card_for_display(card)}")
         
-        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
         all_revealed = True
         for pid in self.get_alive_players():
             p = self.players[pid]
@@ -326,9 +319,7 @@ class GameEngine:
             self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
             self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
             
-            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
-            for pid in self.get_bot_players():
-                self.player_ready(pid)
+            asyncio.create_task(self._auto_continue_bots())
         
         return {
             "success": True,
@@ -347,7 +338,6 @@ class GameEngine:
         if not round_cards:
             return {"success": False, "message": "Нет карт для открытия"}
         
-        # Находим первую неоткрытую карту
         card_index = -1
         for i, card in enumerate(round_cards):
             if card not in player["revealed_cards"] and card not in player["cards_by_round_revealed"].get(self.round, []):
@@ -363,7 +353,6 @@ class GameEngine:
         
         self._add_log(f"🤖 Бот {player['name']} автоматически открыл карту: {format_card_for_display(card)}")
         
-        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
         all_revealed = True
         for pid in self.get_alive_players():
             p = self.players[pid]
@@ -379,9 +368,7 @@ class GameEngine:
             self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
             self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
             
-            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
-            for bot_pid in self.get_bot_players():
-                self.player_ready(bot_pid)
+            asyncio.create_task(self._auto_continue_bots())
         
         return {
             "success": True,
@@ -389,6 +376,16 @@ class GameEngine:
             "all_revealed": all_revealed,
             "player_name": player["name"],
         }
+    
+    async def _auto_continue_bots(self):
+        """Автоматическое нажатие 'Продолжить' для ботов с задержкой"""
+        await asyncio.sleep(1.5)
+        
+        for pid in self.get_bot_players():
+            if pid in self.observer_players or pid in self.eliminated_players:
+                continue
+            self.player_ready(pid)
+            await asyncio.sleep(0.3)
     
     def player_ready(self, player_id: str) -> Dict[str, Any]:
         if self.phase != GamePhase.READY:
@@ -428,7 +425,6 @@ class GameEngine:
         self.votes = {}
         self._add_log(f"🗳️ НАЧАЛО ГОЛОСОВАНИЯ! Раунд {self.round}")
         
-        # ★★★ БОТЫ АВТОМАТИЧЕСКИ ГОЛОСУЮТ ★★★
         asyncio.create_task(self._auto_vote_bots())
         
         return {
@@ -568,7 +564,6 @@ class GameEngine:
         
         self._add_log(f"📝 НАЧАЛО РАУНДА {self.round}")
         
-        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЧИНАЮТ ИГРАТЬ В НОВОМ РАУНДЕ ★★★
         asyncio.create_task(self._auto_play_bots())
         
         return {
@@ -604,7 +599,6 @@ class GameEngine:
         self.final_votes = {}
         self._add_log("🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ! Кто тебе нравится?")
         
-        # ★★★ БОТЫ АВТОМАТИЧЕСКИ ГОЛОСУЮТ В ФИНАЛЕ ★★★
         asyncio.create_task(self._auto_final_vote_bots())
         
         return {
