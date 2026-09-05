@@ -344,7 +344,12 @@
                 
                 if (data.status === 'success') {
                     gameState.players = data.players || [];
-                    gameState.status = 'waiting';  // ★★★ ПРИНУДИТЕЛЬНО УСТАНАВЛИВАЕМ ★★★
+                    gameState.status = 'waiting';
+                    // ★★★ ОБНОВЛЯЕМ isHost ★★★
+                    var found = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                    if (found) {
+                        gameState.isHost = found.is_host || false;
+                    }
                     updateUI();
                     debugLog('✅ Присоединился!');
                     setTimeout(refreshGameState, 500);
@@ -357,6 +362,7 @@
         async function startGame() {
             debugLog('🔥 ЗАПУСК ИГРЫ');
             
+            // ★★★ ПРОВЕРЯЕМ isHost ★★★
             if (!gameState.isHost) {
                 alert('Только ведущий может начать игру!');
                 return;
@@ -712,7 +718,6 @@
                 document.getElementById('current-turn').innerHTML = '💀 ' + gameState.disaster;
             }
             
-            // ★★★ ЛОББИ ВСЕГДА ПОКАЗЫВАЕМ В РЕЖИМЕ ОЖИДАНИЯ ★★★
             if (gameState.status === 'waiting' || gameState.status === 'lobby') {
                 lobby.style.display = 'block';
                 gameArea.style.display = 'none';
@@ -775,21 +780,33 @@
             var allPlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
             var humanPlayers = allPlayers.filter(p => !p.is_bot);
             
-            debugLog('📊 renderPlayersList: Всего активных: ' + allPlayers.length + ' (людей: ' + humanPlayers.length + '), статус: ' + gameState.status + ', isHost: ' + gameState.isHost);
+            // ★★★ ПРОВЕРЯЕМ, ЯВЛЯЕТСЯ ЛИ ИГРОК ВЕДУЩИМ ★★★
+            var isUserHost = gameState.isHost;
             
-            if (allPlayers.length >= 4 && gameState.isHost && gameState.status === 'waiting') {
+            // ★★★ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ИЩЕМ ИГРОКА В СПИСКЕ ★★★
+            if (!isUserHost && gameState.playerId) {
+                var foundPlayer = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                if (foundPlayer && foundPlayer.is_host) {
+                    isUserHost = true;
+                }
+            }
+            
+            debugLog('📊 renderPlayersList: Всего: ' + allPlayers.length + ', isHost: ' + isUserHost + ', status: ' + gameState.status);
+            
+            // ★★★ КНОПКА ПОКАЗЫВАЕТСЯ, ЕСЛИ ЕСТЬ 4+ ИГРОКА И ИГРОК — ВЕДУЩИЙ ★★★
+            if (allPlayers.length >= 4 && isUserHost) {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков, людей: ' + humanPlayers.length + ')';
+                startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков)';
                 startBtn.disabled = false;
                 debugLog('✅ Кнопка "Начать" активна');
-            } else if (gameState.isHost && gameState.status === 'waiting') {
+            } else if (isUserHost) {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '👥 Нужно ещё ' + (4 - allPlayers.length) + ' игроков (включая ботов)';
+                startBtn.textContent = '👥 Нужно ещё ' + (4 - allPlayers.length) + ' игроков';
                 startBtn.disabled = true;
                 debugLog('⏳ Кнопка "Начать" заблокирована');
             } else {
                 startBtn.style.display = 'none';
-                debugLog('❌ Кнопка "Начать" скрыта (статус: ' + gameState.status + ', isHost: ' + gameState.isHost + ')');
+                debugLog('❌ Кнопка "Начать" скрыта (не ведущий)');
             }
         }
 
