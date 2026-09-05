@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Кафе ОАЗИС 2.0</title>
     <style>
-        /* Стили прямо здесь, чтобы не зависеть от style.css */
         * {
             margin: 0;
             padding: 0;
@@ -162,22 +161,20 @@
     
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Базовая отладка
         function debugLog(message) {
             console.log(message);
         }
         
-        // Заглушки для звуков
         function playSound(name) {
             console.log('🔊 Звук:', name);
         }
         
-        // API_BASE определяется из URL
         const API_BASE = window.location.origin;
         
         const gameState = {
             playerId: null,
             chatId: null,
+            userName: 'Игрок',
             players: [],
             myCards: [],
             status: 'waiting',
@@ -194,10 +191,6 @@
             canUseSkill: false,
             disaster: null
         };
-
-        // ============================================
-        // ОСНОВНЫЕ ФУНКЦИИ
-        // ============================================
 
         async function refreshGameState() {
             debugLog('🔄 Обновление состояния...');
@@ -252,19 +245,17 @@
             }
         }
 
-        // ============================================
-        // ИНИЦИАЛИЗАЦИЯ
-        // ============================================
-
         document.addEventListener('DOMContentLoaded', function() {
             debugLog('✅ DOM загружен!');
             
             var urlParams = new URLSearchParams(window.location.search);
             gameState.playerId = parseInt(urlParams.get('user_id')) || null;
             gameState.chatId = urlParams.get('chat_id') || null;
+            gameState.userName = decodeURIComponent(urlParams.get('user_name') || 'Игрок');
             
             debugLog('👤 Player ID: ' + gameState.playerId);
             debugLog('💬 Chat ID: ' + gameState.chatId);
+            debugLog('👤 Имя: ' + gameState.userName);
             
             if (!gameState.chatId && gameState.playerId) {
                 gameState.chatId = gameState.playerId;
@@ -275,20 +266,14 @@
                 return;
             }
             
-            // Подключаемся к игре
             connectToGame();
             
-            // Кнопки
             document.getElementById('start-game')?.addEventListener('click', startGame);
             document.getElementById('reveal-card')?.addEventListener('click', revealCard);
             document.getElementById('continue-btn')?.addEventListener('click', continueGame);
             document.getElementById('vote-btn')?.addEventListener('click', submitVote);
             document.getElementById('use-skill-btn')?.addEventListener('click', useSkill);
         });
-
-        // ============================================
-        // ПОДКЛЮЧЕНИЕ К ИГРЕ
-        // ============================================
 
         async function connectToGame() {
             debugLog('🔄 Подключение к API...');
@@ -348,7 +333,7 @@
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
                         player_id: gameState.playerId,
-                        player_name: 'Игрок',
+                        player_name: gameState.userName || 'Игрок',
                         username: '',
                         chat_id: gameState.chatId
                     })
@@ -366,10 +351,6 @@
                 debugLog('❌ Ошибка присоединения: ' + error.message);
             }
         }
-
-        // ============================================
-        // УПРАВЛЕНИЕ ИГРОЙ
-        // ============================================
 
         async function startGame() {
             debugLog('🔥 ЗАПУСК ИГРЫ');
@@ -497,10 +478,6 @@
             }
         }
 
-        // ============================================
-        // ГОЛОСОВАНИЕ
-        // ============================================
-
         async function startVoting() {
             debugLog('🗳️ ЗАПУСК ГОЛОСОВАНИЯ');
             gameState.status = 'voting';
@@ -607,10 +584,6 @@
             }
         }
 
-        // ============================================
-        // СПОСОБНОСТИ
-        // ============================================
-
         async function useSkill() {
             debugLog('⚡ ИСПОЛЬЗОВАНИЕ СПОСОБНОСТИ');
             
@@ -662,10 +635,6 @@
             }
         }
 
-        // ============================================
-        // ФИНАЛЬНОЕ ГОЛОСОВАНИЕ
-        // ============================================
-
         async function startFinalVoting() {
             debugLog('🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ');
             gameState.status = 'final_voting';
@@ -712,10 +681,6 @@
                 debugLog('❌ Ошибка: ' + error.message);
             }
         }
-
-        // ============================================
-        // ОТОБРАЖЕНИЕ
-        // ============================================
 
         function updateUI() {
             var lobby = document.getElementById('lobby');
@@ -798,14 +763,16 @@
             });
             
             var startBtn = document.getElementById('start-game');
-            var alive = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
-            if (alive.length >= 4 && gameState.isHost && gameState.status === 'waiting') {
+            var allPlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            var humanPlayers = allPlayers.filter(p => !p.is_bot);
+            
+            if (allPlayers.length >= 4 && gameState.isHost && gameState.status === 'waiting') {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '🔥 Начать игру (' + alive.length + ' игроков)';
+                startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков, людей: ' + humanPlayers.length + ')';
                 startBtn.disabled = false;
             } else if (gameState.isHost && gameState.status === 'waiting') {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '👥 Нужно ещё ' + (4 - alive.length) + ' игроков';
+                startBtn.textContent = '👥 Нужно ещё ' + (4 - allPlayers.length) + ' игроков (включая ботов)';
                 startBtn.disabled = true;
             } else {
                 startBtn.style.display = 'none';
@@ -906,7 +873,6 @@
             container.innerHTML = html;
         }
 
-        // ★★★ АВТООБНОВЛЕНИЕ ★★★
         setInterval(function() {
             if (gameState.status !== 'finished') {
                 refreshGameState();
