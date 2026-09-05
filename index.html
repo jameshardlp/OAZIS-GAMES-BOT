@@ -192,6 +192,33 @@
             disaster: null
         };
 
+        async function getMyCards() {
+            debugLog('🃏 Загрузка карт...');
+            try {
+                var response = await fetch(API_BASE + '/api/game/cards', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        player_id: gameState.playerId,
+                        chat_id: gameState.chatId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Карты: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    gameState.myCards = data.cards || [];
+                    gameState.revealedCards = data.revealed || [];
+                    renderCards();
+                } else {
+                    debugLog('❌ Ошибка загрузки карт: ' + data.message);
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка загрузки карт: ' + error.message);
+            }
+        }
+
         async function refreshGameState() {
             debugLog('🔄 Обновление состояния...');
             try {
@@ -225,7 +252,8 @@
                         gameState.role = myData.role || 'Неизвестно';
                         gameState.roleSkill = myData.role_skill || 'Нет способности';
                         gameState.skillUsed = myData.skill_used || false;
-                        gameState.myCards = myData.cards || [];
+                        // ★★★ ЗАГРУЖАЕМ КАРТЫ ★★★
+                        await getMyCards();
                     }
                     
                     updateUI();
@@ -345,7 +373,6 @@
                 if (data.status === 'success') {
                     gameState.players = data.players || [];
                     gameState.status = 'waiting';
-                    // ★★★ ОБНОВЛЯЕМ isHost ★★★
                     var found = gameState.players.find(p => String(p.id) === String(gameState.playerId));
                     if (found) {
                         gameState.isHost = found.is_host || false;
@@ -362,7 +389,6 @@
         async function startGame() {
             debugLog('🔥 ЗАПУСК ИГРЫ');
             
-            // ★★★ ПРОВЕРЯЕМ isHost ★★★
             if (!gameState.isHost) {
                 alert('Только ведущий может начать игру!');
                 return;
@@ -392,6 +418,8 @@
                     gameState.status = 'playing';
                     gameState.disaster = data.disaster || null;
                     updateUI();
+                    // ★★★ ПРИНУДИТЕЛЬНО ЗАГРУЖАЕМ КАРТЫ ★★★
+                    await getMyCards();
                     await refreshGameState();
                 } else {
                     alert(data.message || 'Ошибка запуска игры');
@@ -780,10 +808,8 @@
             var allPlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
             var humanPlayers = allPlayers.filter(p => !p.is_bot);
             
-            // ★★★ ПРОВЕРЯЕМ, ЯВЛЯЕТСЯ ЛИ ИГРОК ВЕДУЩИМ ★★★
             var isUserHost = gameState.isHost;
             
-            // ★★★ ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: ИЩЕМ ИГРОКА В СПИСКЕ ★★★
             if (!isUserHost && gameState.playerId) {
                 var foundPlayer = gameState.players.find(p => String(p.id) === String(gameState.playerId));
                 if (foundPlayer && foundPlayer.is_host) {
@@ -793,10 +819,9 @@
             
             debugLog('📊 renderPlayersList: Всего: ' + allPlayers.length + ', isHost: ' + isUserHost + ', status: ' + gameState.status);
             
-            // ★★★ КНОПКА ПОКАЗЫВАЕТСЯ, ЕСЛИ ЕСТЬ 4+ ИГРОКА И ИГРОК — ВЕДУЩИЙ ★★★
             if (allPlayers.length >= 4 && isUserHost) {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков)';
+                startBtn.textContent = '🔥 Начать игу (' + allPlayers.length + ' игроков)';
                 startBtn.disabled = false;
                 debugLog('✅ Кнопка "Начать" активна');
             } else if (isUserHost) {
@@ -827,7 +852,7 @@
             }
             
             if (!gameState.myCards || gameState.myCards.length === 0) {
-                container.innerHTML = '<p>Карты не загружены</p>';
+                container.innerHTML = '<p style="opacity:0.7;">Карты не загружены</p>';
                 return;
             }
             
