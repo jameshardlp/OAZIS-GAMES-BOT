@@ -1,0 +1,920 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Кафе ОАЗИС 2.0</title>
+    <style>
+        /* Стили прямо здесь, чтобы не зависеть от style.css */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #0a0a0a;
+            color: #f5e6d3;
+            font-family: 'Courier New', monospace;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .neon-sign {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        .neon-text {
+            font-size: 4rem;
+            color: #FFB000;
+            text-shadow: 0 0 10px #FFB000, 0 0 20px #FFB000, 0 0 40px #FFB000, 0 0 80px #FFB000;
+            animation: neon-pulse 2s infinite;
+        }
+        @keyframes neon-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .neon-sub {
+            color: #FFB000;
+            opacity: 0.7;
+            letter-spacing: 4px;
+        }
+        .btn-neon {
+            background: transparent;
+            color: #FFB000;
+            border: 2px solid #FFB000;
+            padding: 15px 30px;
+            font-size: 1.2rem;
+            font-family: 'Courier New', monospace;
+            cursor: pointer;
+            transition: all 0.3s;
+            border-radius: 8px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .btn-neon:hover:not(:disabled) {
+            background: #FFB000;
+            color: #0a0a0a;
+            box-shadow: 0 0 30px rgba(255, 176, 0, 0.6);
+        }
+        .btn-neon:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .player-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #1a0a00;
+            border-radius: 8px;
+            border-left: 3px solid #FFB000;
+        }
+        .character-card {
+            background: linear-gradient(145deg, #1a0a00, #2a1a0a);
+            border: 2px solid #FFB000;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 10px 0;
+        }
+        .card-type {
+            color: #FFB000;
+            font-weight: bold;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        .card-name {
+            font-size: 1.5rem;
+            margin: 10px 0;
+        }
+        .card-effect {
+            font-style: italic;
+            opacity: 0.8;
+            border-top: 1px solid #FFB000;
+            padding-top: 10px;
+        }
+        .host-badge { color: #ffd700; margin-left: 10px; }
+        .voting-card { cursor: pointer; }
+        .voting-card input[type="radio"] { margin-top: 10px; }
+        #round-info {
+            text-align: center;
+            padding: 10px;
+            background: #1a0a00;
+            border-radius: 8px;
+            border: 1px solid #FFB000;
+            margin-bottom: 15px;
+        }
+        #round-number { color: #FFB000; font-size: 1.5rem; }
+        #round-phase { color: #f5e6d3; opacity: 0.7; margin-left: 15px; }
+        #current-turn { color: #FFB000; font-size: 0.9rem; margin-top: 5px; }
+        .result-card { padding: 20px; margin: 10px 0; border-radius: 12px; }
+        .result-card.eliminated { background: #2a0a0a; border: 2px solid #ff0000; }
+        .result-card.survivors { background: #0a2a0a; border: 2px solid #00ff00; }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="neon-sign">
+            <h1 class="neon-text">ОАЗИС</h1>
+            <p class="neon-sub">Бар на окраине • Техас 1998</p>
+        </div>
+        
+        <div id="game-container">
+            <div id="lobby">
+                <h2>👥 Лобби</h2>
+                <div id="players-list"></div>
+                <button id="start-game" class="btn-neon">🔥 Начать игру</button>
+            </div>
+            
+            <div id="game-area" style="display:none;">
+                <div id="round-info">
+                    <span id="round-number">Раунд 1</span>
+                    <span id="round-phase">Открытие карт</span>
+                    <div id="current-turn"></div>
+                </div>
+                
+                <div id="character-cards">
+                    <h2>🎴 Твои карты</h2>
+                    <div id="cards-container"></div>
+                    <button id="reveal-card" class="btn-neon">🃏 Открыть карту</button>
+                    <button id="continue-btn" class="btn-neon" style="display:none;background:#FFB000;color:#0a0a0a;">▶️ Продолжить</button>
+                </div>
+                
+                <div id="voting-area" style="display:none;">
+                    <h2>🗳️ Голосование</h2>
+                    <div id="voting-list"></div>
+                    <button id="vote-btn" class="btn-neon">✅ Проголосовать</button>
+                </div>
+                
+                <div id="skill-area" style="display:none;margin-top:15px;border:1px solid #00FF88;border-radius:8px;padding:15px;">
+                    <h2>⚡ Способность</h2>
+                    <div id="skill-info"></div>
+                    <button id="use-skill-btn" class="btn-neon" style="border-color:#00FF88;color:#00FF88;">⚡ Использовать способность</button>
+                </div>
+            </div>
+        </div>
+        
+        <div id="results" style="display:none;">
+            <h2>🏆 Итоги</h2>
+            <div id="results-list"></div>
+        </div>
+    </div>
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        // Базовая отладка
+        function debugLog(message) {
+            console.log(message);
+        }
+        
+        // Заглушки для звуков
+        function playSound(name) {
+            console.log('🔊 Звук:', name);
+        }
+        
+        // API_BASE определяется из URL
+        const API_BASE = window.location.origin;
+        
+        const gameState = {
+            playerId: null,
+            chatId: null,
+            players: [],
+            myCards: [],
+            status: 'waiting',
+            isHost: false,
+            isObserver: false,
+            isEliminated: false,
+            currentRound: 0,
+            maxRounds: 5,
+            health: 3,
+            maxHealth: 3,
+            role: 'Неизвестно',
+            roleSkill: 'Нет способности',
+            skillUsed: false,
+            canUseSkill: false,
+            disaster: null
+        };
+
+        // ============================================
+        // ОСНОВНЫЕ ФУНКЦИИ
+        // ============================================
+
+        async function refreshGameState() {
+            debugLog('🔄 Обновление состояния...');
+            try {
+                var response = await fetch(API_BASE + '/api/game/state', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        player_id: gameState.playerId,
+                        chat_id: gameState.chatId
+                    })
+                });
+                
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                var data = await response.json();
+                debugLog('📦 Состояние: ' + JSON.stringify(data));
+                
+                if (data.chat_id) {
+                    gameState.players = data.players || [];
+                    gameState.status = data.phase || 'waiting';
+                    gameState.isHost = data.is_host || false;
+                    gameState.isObserver = data.is_observer || false;
+                    gameState.isEliminated = data.is_eliminated || false;
+                    gameState.currentRound = data.round || 0;
+                    gameState.maxRounds = data.max_rounds || 5;
+                    gameState.disaster = data.disaster || null;
+                    
+                    var myData = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                    if (myData) {
+                        gameState.health = myData.health || 3;
+                        gameState.maxHealth = myData.max_health || 3;
+                        gameState.role = myData.role || 'Неизвестно';
+                        gameState.roleSkill = myData.role_skill || 'Нет способности';
+                        gameState.skillUsed = myData.skill_used || false;
+                        gameState.myCards = myData.cards || [];
+                    }
+                    
+                    updateUI();
+                    
+                    if (gameState.status === 'voting') {
+                        await startVoting();
+                    }
+                    if (gameState.status === 'final_voting') {
+                        await startFinalVoting();
+                    }
+                    if (gameState.status === 'finished') {
+                        showResults();
+                    }
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // ИНИЦИАЛИЗАЦИЯ
+        // ============================================
+
+        document.addEventListener('DOMContentLoaded', function() {
+            debugLog('✅ DOM загружен!');
+            
+            var urlParams = new URLSearchParams(window.location.search);
+            gameState.playerId = parseInt(urlParams.get('user_id')) || null;
+            gameState.chatId = urlParams.get('chat_id') || null;
+            
+            debugLog('👤 Player ID: ' + gameState.playerId);
+            debugLog('💬 Chat ID: ' + gameState.chatId);
+            
+            if (!gameState.chatId && gameState.playerId) {
+                gameState.chatId = gameState.playerId;
+            }
+            
+            if (!gameState.chatId) {
+                document.body.innerHTML = '<h1 style="color:red;">❌ Ошибка: не найден chat_id</h1>';
+                return;
+            }
+            
+            // Подключаемся к игре
+            connectToGame();
+            
+            // Кнопки
+            document.getElementById('start-game')?.addEventListener('click', startGame);
+            document.getElementById('reveal-card')?.addEventListener('click', revealCard);
+            document.getElementById('continue-btn')?.addEventListener('click', continueGame);
+            document.getElementById('vote-btn')?.addEventListener('click', submitVote);
+            document.getElementById('use-skill-btn')?.addEventListener('click', useSkill);
+        });
+
+        // ============================================
+        // ПОДКЛЮЧЕНИЕ К ИГРЕ
+        // ============================================
+
+        async function connectToGame() {
+            debugLog('🔄 Подключение к API...');
+            try {
+                var response = await fetch(API_BASE + '/api/game/state', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        player_id: gameState.playerId,
+                        chat_id: gameState.chatId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data));
+                
+                if (data.chat_id) {
+                    gameState.players = data.players || [];
+                    gameState.status = data.phase || 'waiting';
+                    gameState.isHost = data.is_host || false;
+                    gameState.isObserver = data.is_observer || false;
+                    gameState.isEliminated = data.is_eliminated || false;
+                    gameState.currentRound = data.round || 0;
+                    gameState.maxRounds = data.max_rounds || 5;
+                    gameState.disaster = data.disaster || null;
+                    
+                    var playerExists = gameState.players.some(function(p) {
+                        return String(p.id) === String(gameState.playerId);
+                    });
+                    
+                    if (!playerExists && gameState.status === 'waiting') {
+                        await joinGame();
+                        await refreshGameState();
+                    }
+                    
+                    updateUI();
+                    
+                    if (gameState.status === 'voting') {
+                        await startVoting();
+                    }
+                    if (gameState.status === 'final_voting') {
+                        await startFinalVoting();
+                    }
+                    if (gameState.status === 'finished') {
+                        showResults();
+                    }
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        async function joinGame() {
+            try {
+                var response = await fetch(API_BASE + '/api/game/join', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        player_id: gameState.playerId,
+                        player_name: 'Игрок',
+                        username: '',
+                        chat_id: gameState.chatId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ join: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    gameState.players = data.players || [];
+                    updateUI();
+                    debugLog('✅ Присоединился!');
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка присоединения: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // УПРАВЛЕНИЕ ИГРОЙ
+        // ============================================
+
+        async function startGame() {
+            debugLog('🔥 ЗАПУСК ИГРЫ');
+            
+            if (!gameState.isHost) {
+                alert('Только ведущий может начать игру!');
+                return;
+            }
+            
+            if (gameState.players.length < 4) {
+                alert('Нужно минимум 4 игрока! Сейчас: ' + gameState.players.length);
+                return;
+            }
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    gameState.status = 'playing';
+                    gameState.disaster = data.disaster || null;
+                    updateUI();
+                    await refreshGameState();
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        async function revealCard() {
+            debugLog('🃏 Открытие карты...');
+            
+            if (gameState.isObserver || gameState.isEliminated) {
+                alert('Вы в режиме наблюдения');
+                return;
+            }
+            
+            var cardIndex = -1;
+            for (var i = 0; i < gameState.myCards.length; i++) {
+                if (!gameState.myCards[i].isRevealed) {
+                    cardIndex = i;
+                    break;
+                }
+            }
+            
+            if (cardIndex === -1) {
+                alert('Все карты уже открыты!');
+                return;
+            }
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/reveal', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        card_index: cardIndex
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ открытия: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    gameState.myCards[cardIndex].isRevealed = true;
+                    renderCards();
+                    setTimeout(refreshGameState, 1000);
+                } else {
+                    alert(data.message || 'Ошибка открытия карты');
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        async function continueGame() {
+            debugLog('▶️ ПРОДОЛЖИТЬ');
+            
+            document.getElementById('continue-btn').style.display = 'none';
+            document.getElementById('continue-btn').disabled = true;
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/continue', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        player_id: gameState.playerId,
+                        chat_id: gameState.chatId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ continue: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    if (data.all_ready) {
+                        await refreshGameState();
+                        await startVoting();
+                    } else {
+                        document.getElementById('continue-btn').textContent = '⏳ Ожидание (' + data.ready_count + '/' + data.total_players + ')';
+                        document.getElementById('continue-btn').style.display = 'block';
+                        document.getElementById('continue-btn').disabled = true;
+                        setTimeout(refreshGameState, 2000);
+                    }
+                } else {
+                    document.getElementById('continue-btn').style.display = 'block';
+                    document.getElementById('continue-btn').textContent = '▶️ Продолжить';
+                    document.getElementById('continue-btn').disabled = false;
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+                document.getElementById('continue-btn').style.display = 'block';
+                document.getElementById('continue-btn').textContent = '▶️ Продолжить';
+                document.getElementById('continue-btn').disabled = false;
+            }
+        }
+
+        // ============================================
+        // ГОЛОСОВАНИЕ
+        // ============================================
+
+        async function startVoting() {
+            debugLog('🗳️ ЗАПУСК ГОЛОСОВАНИЯ');
+            gameState.status = 'voting';
+            updateUI();
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/voting/players', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId
+                    })
+                });
+                
+                var data = await response.json();
+                
+                if (data.status === 'success') {
+                    renderVotingList(data.players);
+                    document.getElementById('vote-btn').disabled = false;
+                    
+                    if (gameState.roleSkill && gameState.roleSkill !== 'Нет способности' && !gameState.skillUsed) {
+                        document.getElementById('skill-area').style.display = 'block';
+                        document.getElementById('skill-info').innerHTML = '⚡ <strong>' + gameState.roleSkill + '</strong>';
+                        gameState.canUseSkill = true;
+                    }
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        function renderVotingList(players) {
+            var container = document.getElementById('voting-list');
+            container.innerHTML = '';
+            
+            if (!players || players.length === 0) {
+                container.innerHTML = '<p>Нет игроков для голосования</p>';
+                return;
+            }
+            
+            players.forEach(function(player) {
+                var card = document.createElement('div');
+                card.className = 'character-card voting-card';
+                var roleText = player.role || 'Без роли';
+                card.innerHTML = `
+                    <div class="card-type">Игрок</div>
+                    <div class="card-name">${player.name}</div>
+                    <div class="card-effect">🎴 ${roleText}</div>
+                    <input type="radio" name="vote" value="${player.id}" id="vote-${player.id}">
+                    <label for="vote-${player.id}">Голосовать</label>
+                `;
+                container.appendChild(card);
+            });
+            
+            document.getElementById('vote-btn').disabled = false;
+        }
+
+        async function submitVote() {
+            debugLog('🗳️ ОТПРАВКА ГОЛОСА');
+            var selected = document.querySelector('input[name="vote"]:checked');
+            
+            if (!selected) {
+                alert('Выберите игрока!');
+                return;
+            }
+            
+            var targetId = parseInt(selected.value);
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/vote', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        target_id: targetId
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ голосования: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    document.getElementById('vote-btn').disabled = true;
+                    
+                    if (data.game_finished) {
+                        if (data.winner === 'human') {
+                            alert('🏆 ПОБЕДА! ' + data.winner_name + ' выжил!');
+                        } else if (data.winner === 'bots') {
+                            alert('🤖 Боты захватили кафе!');
+                        }
+                        await refreshGameState();
+                    } else if (data.all_voted) {
+                        setTimeout(refreshGameState, 1500);
+                    } else {
+                        setTimeout(refreshGameState, 2500);
+                    }
+                } else {
+                    alert(data.message || 'Ошибка голосования');
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // СПОСОБНОСТИ
+        // ============================================
+
+        async function useSkill() {
+            debugLog('⚡ ИСПОЛЬЗОВАНИЕ СПОСОБНОСТИ');
+            
+            if (!gameState.canUseSkill || gameState.skillUsed) {
+                alert('Вы уже использовали способность');
+                return;
+            }
+            
+            var alivePlayers = gameState.players.filter(p => 
+                String(p.id) !== String(gameState.playerId) && 
+                !p.is_observer && !p.is_eliminated
+            );
+            
+            if (alivePlayers.length === 0) {
+                alert('Нет доступных целей');
+                return;
+            }
+            
+            var targetId = prompt('Введите ID игрока (см. логи):\n' + 
+                alivePlayers.map(p => p.id + ' - ' + p.name).join('\n'));
+            
+            if (!targetId) return;
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/skill', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        target_id: parseInt(targetId)
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ способности: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    gameState.skillUsed = true;
+                    gameState.canUseSkill = false;
+                    document.getElementById('skill-area').style.display = 'none';
+                    alert(data.message || 'Способность применена!');
+                    setTimeout(refreshGameState, 1500);
+                } else {
+                    alert(data.message || 'Ошибка использования способности');
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // ФИНАЛЬНОЕ ГОЛОСОВАНИЕ
+        // ============================================
+
+        async function startFinalVoting() {
+            debugLog('🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ');
+            gameState.status = 'final_voting';
+            updateUI();
+            
+            var alivePlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            
+            if (alivePlayers.length === 0) {
+                alert('Нет игроков для голосования');
+                return;
+            }
+            
+            var targetId = prompt('Голосуйте за игрока, который вам нравится:\n' + 
+                alivePlayers.map(p => p.id + ' - ' + p.name + ' (' + (p.role || 'Неизвестно') + ')').join('\n'));
+            
+            if (!targetId) return;
+            
+            try {
+                var response = await fetch(API_BASE + '/api/game/final/vote', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        target_id: parseInt(targetId)
+                    })
+                });
+                
+                var data = await response.json();
+                debugLog('📦 Ответ финала: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {
+                    if (data.game_finished) {
+                        alert('🏆 ПОБЕДА! ' + data.winner_name + ' победил в финальном голосовании!');
+                        await refreshGameState();
+                    } else {
+                        alert('Ваш голос принят!');
+                        setTimeout(refreshGameState, 3000);
+                    }
+                } else {
+                    alert(data.message || 'Ошибка голосования');
+                }
+            } catch (error) {
+                debugLog('❌ Ошибка: ' + error.message);
+            }
+        }
+
+        // ============================================
+        // ОТОБРАЖЕНИЕ
+        // ============================================
+
+        function updateUI() {
+            var lobby = document.getElementById('lobby');
+            var gameArea = document.getElementById('game-area');
+            var votingArea = document.getElementById('voting-area');
+            var results = document.getElementById('results');
+            var skillArea = document.getElementById('skill-area');
+            
+            document.getElementById('round-number').textContent = 'Раунд ' + (gameState.currentRound || 0) + '/' + gameState.maxRounds;
+            
+            var phaseText = {
+                'waiting': 'Ожидание',
+                'playing': 'Открытие карт',
+                'ready': 'Готов к голосованию',
+                'voting': 'Голосование',
+                'final_voting': 'Финальное голосование',
+                'finished': 'Завершена'
+            };
+            document.getElementById('round-phase').textContent = phaseText[gameState.status] || gameState.status;
+            
+            if (gameState.disaster) {
+                document.getElementById('current-turn').innerHTML = '💀 ' + gameState.disaster;
+            }
+            
+            if (gameState.status === 'waiting' || gameState.status === 'lobby') {
+                lobby.style.display = 'block';
+                gameArea.style.display = 'none';
+                votingArea.style.display = 'none';
+                results.style.display = 'none';
+                skillArea.style.display = 'none';
+                renderPlayersList();
+            } else if (gameState.status === 'voting') {
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'none';
+                votingArea.style.display = 'block';
+                results.style.display = 'none';
+            } else if (gameState.status === 'playing' || gameState.status === 'ready') {
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'block';
+                votingArea.style.display = 'none';
+                results.style.display = 'none';
+                skillArea.style.display = 'none';
+                renderCards();
+            } else if (gameState.status === 'final_voting') {
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'none';
+                votingArea.style.display = 'none';
+                results.style.display = 'none';
+                skillArea.style.display = 'none';
+            } else if (gameState.status === 'finished') {
+                lobby.style.display = 'none';
+                gameArea.style.display = 'none';
+                votingArea.style.display = 'none';
+                results.style.display = 'block';
+                skillArea.style.display = 'none';
+                showResults();
+            }
+        }
+
+        function renderPlayersList() {
+            var container = document.getElementById('players-list');
+            container.innerHTML = '';
+            
+            gameState.players.forEach(function(player) {
+                var div = document.createElement('div');
+                div.className = 'player-item';
+                var hostBadge = player.is_host ? '<span class="host-badge">⭐ Ведущий</span>' : '';
+                var isBot = player.is_bot ? '🤖 ' : '';
+                var observerBadge = player.is_observer ? '👀 ' : '';
+                var healthStr = '❤️'.repeat(player.health || 3) + '🖤'.repeat((player.max_health || 3) - (player.health || 3));
+                div.innerHTML = `
+                    <span>${observerBadge}${isBot}👤 ${player.name}</span>
+                    <span style="margin-left:10px;">${healthStr}</span>
+                    ${hostBadge}
+                `;
+                container.appendChild(div);
+            });
+            
+            var startBtn = document.getElementById('start-game');
+            var alive = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            if (alive.length >= 4 && gameState.isHost && gameState.status === 'waiting') {
+                startBtn.style.display = 'block';
+                startBtn.textContent = '🔥 Начать игру (' + alive.length + ' игроков)';
+                startBtn.disabled = false;
+            } else if (gameState.isHost && gameState.status === 'waiting') {
+                startBtn.style.display = 'block';
+                startBtn.textContent = '👥 Нужно ещё ' + (4 - alive.length) + ' игроков';
+                startBtn.disabled = true;
+            } else {
+                startBtn.style.display = 'none';
+            }
+        }
+
+        function renderCards() {
+            var container = document.getElementById('cards-container');
+            container.innerHTML = '';
+            
+            if (gameState.isObserver || gameState.isEliminated) {
+                container.innerHTML = `
+                    <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #FFB000;">
+                        <h2 style="color:#FFB000;">👀 РЕЖИМ НАБЛЮДЕНИЯ</h2>
+                        <p>Вы выбыли из игры</p>
+                    </div>
+                `;
+                document.getElementById('reveal-card').style.display = 'none';
+                document.getElementById('continue-btn').style.display = 'none';
+                return;
+            }
+            
+            if (!gameState.myCards || gameState.myCards.length === 0) {
+                container.innerHTML = '<p>Карты не загружены</p>';
+                return;
+            }
+            
+            gameState.myCards.forEach(function(card) {
+                var div = document.createElement('div');
+                div.className = 'character-card';
+                div.style.borderColor = card.isRevealed ? '#FFB000' : '#666';
+                div.style.opacity = card.isRevealed ? '1' : '0.7';
+                
+                var icon = card.icon || '🃏';
+                var cardName = card.isRevealed ? card.name : '❓ Скрыто';
+                var cardDesc = card.isRevealed ? (card.desc || '') : 'Нажмите "Открыть карту"';
+                var roundBadge = card.round ? '📌 Раунд ' + card.round : '';
+                
+                div.innerHTML = `
+                    <div class="card-type">${icon} ${card.type || 'Карта'}</div>
+                    <div class="card-name">${cardName}</div>
+                    <div class="card-effect">${cardDesc}</div>
+                    <div style="font-size:0.6rem;opacity:0.4;margin-top:5px;">${roundBadge}</div>
+                `;
+                container.appendChild(div);
+            });
+            
+            var remaining = gameState.myCards.filter(function(c) { return !c.isRevealed; }).length;
+            
+            var revealBtn = document.getElementById('reveal-card');
+            var continueBtn = document.getElementById('continue-btn');
+            
+            if (gameState.status === 'ready' || remaining === 0) {
+                revealBtn.style.display = 'none';
+                continueBtn.style.display = 'block';
+                continueBtn.textContent = '▶️ Продолжить';
+                continueBtn.disabled = false;
+            } else {
+                revealBtn.style.display = 'block';
+                revealBtn.textContent = '🃏 Открыть карту (осталось: ' + remaining + ')';
+                revealBtn.disabled = false;
+                continueBtn.style.display = 'none';
+            }
+        }
+
+        function showResults() {
+            var container = document.getElementById('results-list');
+            container.innerHTML = '';
+            
+            var alive = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            var eliminated = gameState.players.filter(p => p.is_observer || p.is_eliminated);
+            
+            var html = '';
+            
+            if (alive.length > 0) {
+                html += '<h3 style="color:#00FF00;">🏆 ВЫЖИВШИЕ</h3>';
+                alive.forEach(function(p) {
+                    html += `
+                        <div class="result-card survivors">
+                            <strong>${p.name}</strong> (${p.role || 'Неизвестно'})
+                        </div>
+                    `;
+                });
+            }
+            
+            if (eliminated.length > 0) {
+                html += '<h3 style="color:#FF0000;margin-top:20px;">💀 ВЫБЫВШИЕ</h3>';
+                eliminated.forEach(function(p) {
+                    html += `
+                        <div class="result-card eliminated">
+                            <strong>${p.name}</strong> (${p.role || 'Неизвестно'})
+                            <span style="margin-left:10px;">👀 Наблюдатель</span>
+                        </div>
+                    `;
+                });
+            }
+            
+            container.innerHTML = html;
+        }
+
+        // ★★★ АВТООБНОВЛЕНИЕ ★★★
+        setInterval(function() {
+            if (gameState.status !== 'finished') {
+                refreshGameState();
+            }
+        }, 3000);
+
+        debugLog('✅ Mini App загружен!');
+        debugLog('🔄 Автообновление каждые 3 секунды');
+    </script>
+</body>
+</html>
