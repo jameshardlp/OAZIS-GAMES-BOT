@@ -252,7 +252,6 @@
                         gameState.role = myData.role || 'Неизвестно';
                         gameState.roleSkill = myData.role_skill || 'Нет способности';
                         gameState.skillUsed = myData.skill_used || false;
-                        // ★★★ ЗАГРУЖАЕМ КАРТЫ ★★★
                         await getMyCards();
                     }
                     
@@ -418,7 +417,6 @@
                     gameState.status = 'playing';
                     gameState.disaster = data.disaster || null;
                     updateUI();
-                    // ★★★ ПРИНУДИТЕЛЬНО ЗАГРУЖАЕМ КАРТЫ ★★★
                     await getMyCards();
                     await refreshGameState();
                 } else {
@@ -821,7 +819,7 @@
             
             if (allPlayers.length >= 4 && isUserHost) {
                 startBtn.style.display = 'block';
-                startBtn.textContent = '🔥 Начать игу (' + allPlayers.length + ' игроков)';
+                startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков)';
                 startBtn.disabled = false;
                 debugLog('✅ Кнопка "Начать" активна');
             } else if (isUserHost) {
@@ -856,6 +854,7 @@
                 return;
             }
             
+            var remaining = 0;
             gameState.myCards.forEach(function(card) {
                 var div = document.createElement('div');
                 div.className = 'character-card';
@@ -874,9 +873,11 @@
                     <div style="font-size:0.6rem;opacity:0.4;margin-top:5px;">${roundBadge}</div>
                 `;
                 container.appendChild(div);
+                
+                if (!card.isRevealed) {
+                    remaining++;
+                }
             });
-            
-            var remaining = gameState.myCards.filter(function(c) { return !c.isRevealed; }).length;
             
             var revealBtn = document.getElementById('reveal-card');
             var continueBtn = document.getElementById('continue-btn');
