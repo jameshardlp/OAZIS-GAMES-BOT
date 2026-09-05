@@ -176,6 +176,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
         
         const gameState = {{
             playerId: null,
+            chatId: null,
             gameId: null,
             players: [],
             myCards: [],
@@ -196,7 +197,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                     }})
                 }});
                 
@@ -207,7 +208,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 var data = await response.json();
                 debugLog('📦 Состояние: ' + JSON.stringify(data));
                 
-                if (data.game_id) {{
+                if (data.chat_id) {{
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
                     gameState.isHost = data.is_host || false;
@@ -263,7 +264,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             debugLog('🚀 DOM загружен!');
             
             var urlParams = new URLSearchParams(window.location.search);
-            gameState.gameId = urlParams.get('game_id');
+            gameState.chatId = urlParams.get('chat_id');
             var userIdFromUrl = urlParams.get('user_id');
             var userNameFromUrl = urlParams.get('user_name');
             
@@ -318,10 +319,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('⚠️ Нет данных пользователя!');
             }}
             
-            if (gameState.gameId) {{
-                debugLog('🎮 Game ID: ' + gameState.gameId);
+            if (gameState.chatId) {{
+                debugLog('💬 Chat ID: ' + gameState.chatId);
             }} else {{
-                debugLog('❌ Нет Game ID!');
+                debugLog('❌ Нет Chat ID!');
                 return;
             }}
             
@@ -378,14 +379,14 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                     }})
                 }});
                 
                 var data = await response.json();
                 debugLog('📦 Ответ: ' + JSON.stringify(data));
                 
-                if (data.game_id) {{
+                if (data.chat_id) {{
                     gameState.players = data.players || [];
                     gameState.status = data.status || 'waiting';
                     gameState.isHost = data.is_host || false;
@@ -426,7 +427,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         player_id: gameState.playerId,
                         player_name: userName,
                         username: '',
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                     }})
                 }});
                 
@@ -471,7 +472,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                         player_id: gameState.playerId,
                     }})
                 }});
@@ -497,7 +498,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                     }})
                 }});
                 
@@ -535,7 +536,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                         player_id: gameState.playerId,
                         card_index: cardIndex,
                     }})
@@ -585,7 +586,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
                         player_id: gameState.playerId,
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                     }})
                 }});
                 
@@ -632,7 +633,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                         player_id: gameState.playerId,
                     }})
                 }});
@@ -697,7 +698,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
-                        game_id: gameState.gameId,
+                        chat_id: gameState.chatId,
                         player_id: gameState.playerId,
                         target_id: targetId,
                     }})
@@ -938,13 +939,13 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         headers: {{'Content-Type': 'application/json'}},
                         body: JSON.stringify({{
                             player_id: gameState.playerId,
-                            game_id: gameState.gameId,
+                            chat_id: gameState.chatId,
                         }})
                     }});
                     
                     var data = await response.json();
                     
-                    if (data.game_id && data.status && data.status !== gameState.status) {{
+                    if (data.chat_id && data.status && data.status !== gameState.status) {{
                         debugLog('🔄 Статус изменился: ' + gameState.status + ' -> ' + data.status);
                         gameState.status = data.status;
                         gameState.players = data.players || [];
@@ -1512,6 +1513,7 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
+    # ★★★ ПОЛУЧАЕМ CHAT_ID ★★★
     if callback.message and callback.message.chat:
         chat_id = str(callback.message.chat.id)
         print(f"💬 Chat ID: {chat_id}")
@@ -1519,30 +1521,8 @@ async def game_callback(callback: types.CallbackQuery):
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    if chat_id in games:
-        game = games[chat_id]
-        game_id = game['game_id']
-        print(f"✅ Найдена существующая игра: {game_id}")
-    else:
-        game_id = str(uuid.uuid4())[:8]
-        print(f"🆕 Создаём новую игру: {game_id}")
-        games[chat_id] = {
-            'game_id': game_id,
-            'chat_id': chat_id,
-            'players': [],
-            'status': 'waiting',
-            'round': 0,
-            'max_rounds': 5,
-            'host_id': str(user_id),
-            'host_name': user_name,
-            'created_at': datetime.now().isoformat(),
-            'votes': {},
-            'eliminated': [],
-            'players_ready': [],
-        }
-        print(f"✅ Игра создана: {games[chat_id]}")
-    
-    game_url = f"{WEBAPP_URL}?game_id={game_id}&user_id={user_id}&user_name={user_name_encoded}"
+    # ★★★ ПЕРЕДАЁМ CHAT_ID В URL ★★★
+    game_url = f"{WEBAPP_URL}?chat_id={chat_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
     await callback.answer(url=game_url)
@@ -1670,19 +1650,26 @@ async def api_get_state(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        # ★★★ ИЩЕМ ИГРУ ПО CHAT_ID ★★★
+        if not chat_id:
+            print("❌ chat_id не передан!")
+            return web.json_response({
+                'status': 'error',
+                'message': 'chat_id не передан'
+            }, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
-            print(f"❌ Игра не найдена: {game_id}")
-            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+            print(f"❌ Игра не найдена для чата: {chat_id}")
+            return web.json_response({
+                'status': 'error',
+                'message': f'Игра не найдена для чата {chat_id}'
+            }, status=404)
         
-        print(f"✅ Игра найдена")
+        print(f"✅ Игра найдена для чата: {chat_id}")
         
         player = None
         is_observer = False
@@ -1693,6 +1680,7 @@ async def api_get_state(request):
         
         return web.json_response({
             'game_id': game['game_id'],
+            'chat_id': game['chat_id'],
             'status': game['status'],
             'players': game['players'],
             'round': game['round'],
@@ -1711,13 +1699,12 @@ async def api_join_game(request):
         player_id = data.get('player_id')
         player_name = data.get('player_name')
         username = data.get('username', '')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -1762,13 +1749,12 @@ async def api_start_game(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -1816,13 +1802,12 @@ async def api_get_cards(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -1844,14 +1829,13 @@ async def api_reveal_card(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         card_index = data.get('card_index')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -1906,13 +1890,12 @@ async def api_continue(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -1982,13 +1965,12 @@ async def api_get_voting_players(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -2013,14 +1995,13 @@ async def api_submit_vote(request):
     try:
         data = await request.json()
         player_id = data.get('player_id')
-        game_id = data.get('game_id')
+        chat_id = data.get('chat_id')
         target_id = data.get('target_id')
         
-        game = None
-        for g in games.values():
-            if g['game_id'] == game_id:
-                game = g
-                break
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
         
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
@@ -2219,7 +2200,7 @@ async def main():
     app.router.add_options('/api/{path:.*}', handle_options)
     
     app.router.add_get('/api/test', api_test)
-    app.router.add_get('/api/debug/status', api_debug_status)  # ★★★ ДОБАВЛЯЕМ API ОТЛАДКИ ★★★
+    app.router.add_get('/api/debug/status', api_debug_status)
     app.router.add_post('/api/game/state', api_get_state)
     app.router.add_post('/api/game/join', api_join_game)
     app.router.add_post('/api/game/start', api_start_game)
