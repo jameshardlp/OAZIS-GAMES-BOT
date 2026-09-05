@@ -92,7 +92,7 @@ class GameEngine:
             "round": self.round,
             "max_rounds": self.max_rounds,
             "players": self.get_players_list(player_id),
-            "is_host": self.host_id == player_id,
+            "is_host": str(self.host_id) == str(player_id) if player_id else False,
             "is_observer": player_id in self.observer_players if player_id else False,
             "is_eliminated": player_id in self.eliminated_players if player_id else False,
             "current_turn": self.get_current_player_id(),
@@ -111,7 +111,7 @@ class GameEngine:
                 "role": player.get("role", "Неизвестно"),
                 "health": player.get("health", 3),
                 "max_health": player.get("max_health", 3),
-                "is_host": player_id == self.host_id,
+                "is_host": str(player_id) == str(self.host_id),
                 "is_bot": player.get("is_bot", False),
                 "is_observer": player_id in self.observer_players,
                 "is_eliminated": player_id in self.eliminated_players,
@@ -175,7 +175,7 @@ class GameEngine:
             "id": player_id,
             "name": name,
             "is_bot": is_bot,
-            "is_host": player_id == self.host_id,
+            "is_host": str(player_id) == str(self.host_id),
             "health": 3,
             "max_health": 3,
             "role": None,
@@ -601,7 +601,6 @@ class GameEngine:
         
         result = {"success": True, "skill": skill, "role": role}
         
-        # Здесь все способности (оставлены для краткости, но можно добавить позже)
         result["message"] = f"⚡ Вы использовали способность '{skill}'"
         player["skill_used"] = True
         self._add_log(f"⚡ {player['name']} использовал способность: {skill}")
