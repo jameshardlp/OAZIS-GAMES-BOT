@@ -264,9 +264,24 @@ HTML_PAGE = f'''<!DOCTYPE html>
             debugLog('🚀 DOM загружен!');
             
             var urlParams = new URLSearchParams(window.location.search);
-            gameState.chatId = urlParams.get('chat_id');
             var userIdFromUrl = urlParams.get('user_id');
             var userNameFromUrl = urlParams.get('user_name');
+            var chatIdFromUrl = urlParams.get('chat_id');
+            
+            // ★★★ ПОЛУЧАЕМ CHAT_ID ИЗ TELEGRAM WEBAPP DATA ★★★
+            var chatIdFromInitData = null;
+            try {{
+                var initData = window.Telegram.WebApp.initDataUnsafe;
+                if (initData && initData.chat) {{
+                    chatIdFromInitData = initData.chat.id;
+                    debugLog('💬 Chat из initData: ' + chatIdFromInitData);
+                }}
+            }} catch(e) {{
+                debugLog('⚠️ Не удалось получить chat из initData');
+            }}
+            
+            // Используем chat_id из URL (если есть) или из initData
+            gameState.chatId = chatIdFromUrl || chatIdFromInitData || null;
             
             if (userIdFromUrl) {{
                 gameState.playerId = parseInt(userIdFromUrl);
@@ -299,6 +314,17 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }}
             }}
             
+            // Если chat_id не получен, используем player_id как chat_id
+            if (!gameState.chatId && gameState.playerId) {{
+                gameState.chatId = gameState.playerId;
+                debugLog('⚠️ chat_id не найден, используем player_id как chat_id: ' + gameState.chatId);
+            }}
+            
+            if (!gameState.chatId) {{
+                debugLog('❌ Нет chat_id!');
+                return;
+            }}
+            
             var userName = 'Игрок';
             if (userNameFromUrl) {{
                 userName = decodeURIComponent(userNameFromUrl);
@@ -319,15 +345,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('⚠️ Нет данных пользователя!');
             }}
             
-            if (gameState.chatId) {{
-                debugLog('💬 Chat ID: ' + gameState.chatId);
-            }} else {{
-                debugLog('❌ Нет Chat ID!');
-                return;
-            }}
-            
             gameState.userName = userName;
             debugLog('👤 Итоговое имя: ' + userName);
+            debugLog('💬 Итоговый chat_id: ' + gameState.chatId);
             
             connectToGame();
             
@@ -1521,7 +1541,7 @@ async def game_callback(callback: types.CallbackQuery):
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПЕРЕДАЁМ CHAT_ID В URL ★★★
+    # ★★★ ПЕРЕДАЁМ CHAT_ID В URL (для совместимости, но основное получение будет из initData) ★★★
     game_url = f"{WEBAPP_URL}?chat_id={chat_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
@@ -1664,10 +1684,18 @@ async def api_get_state(request):
         
         if not game:
             print(f"❌ Игра не найдена для чата: {chat_id}")
-            return web.json_response({
-                'status': 'error',
-                'message': f'Игра не найдена для чата {chat_id}'
-            }, status=404)
+            # ★★★ ЗАПАСНОЙ ВАРИАНТ: ищем по player_id ★★★
+            if player_id:
+                for g in games.values():
+                    if any(str(p['id']) == str(player_id) for p in g['players']):
+                        game = g
+                        print(f"✅ Игра найдена по player_id: {game['chat_id']}")
+                        break
+            if not game:
+                return web.json_response({
+                    'status': 'error',
+                    'message': f'Игра не найдена для чата {chat_id}'
+                }, status=404)
         
         print(f"✅ Игра найдена для чата: {chat_id}")
         
