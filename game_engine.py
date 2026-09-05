@@ -246,7 +246,40 @@ class GameEngine:
         self._add_log(f"👥 Игроков: {len(self.get_alive_players())}")
         self._add_log(f"💀 Катастрофа: {self.disaster}")
         
+        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЧИНАЮТ ОТКРЫВАТЬ КАРТЫ ★★★
+        asyncio.create_task(self._auto_play_bots())
+        
         return True
+    
+    async def _auto_play_bots(self):
+        """Автоматический ход ботов в фоновом режиме"""
+        await asyncio.sleep(1)  # Небольшая задержка перед началом
+        
+        while self.phase == GamePhase.PLAYING or self.phase == GamePhase.READY:
+            # Проверяем всех ботов
+            for player_id in self.get_bot_players():
+                if player_id in self.observer_players or player_id in self.eliminated_players:
+                    continue
+                
+                player = self.players.get(player_id)
+                if not player:
+                    continue
+                
+                round_cards = player["rounds"].get(self.round, [])
+                revealed = player["cards_by_round_revealed"].get(self.round, [])
+                
+                # Если бот ещё не открыл все карты
+                if len(revealed) < len(round_cards):
+                    self._auto_reveal_bot(player_id)
+                    await asyncio.sleep(0.5)  # Задержка между открытиями
+                
+                # Если бот открыл все карты, но ещё не нажал "Продолжить"
+                elif self.phase == GamePhase.READY:
+                    if str(player_id) not in self.players_ready:
+                        self.player_ready(player_id)
+                        await asyncio.sleep(0.3)
+            
+            await asyncio.sleep(1)
     
     def reveal_card(self, player_id: str, card_index: int) -> Dict[str, Any]:
         if self.phase != GamePhase.PLAYING:
@@ -258,6 +291,10 @@ class GameEngine:
         player = self.players.get(player_id)
         if not player:
             return {"success": False, "message": "Игрок не найден"}
+        
+        # ★★★ БОТЫ ОТКРЫВАЮТ КАРТЫ АВТОМАТИЧЕСКИ ★★★
+        if player.get("is_bot", False):
+            return self._auto_reveal_bot(player_id)
         
         current = self.get_current_player_id()
         if current and current != player_id:
@@ -292,6 +329,46 @@ class GameEngine:
             "player_name": player["name"],
         }
     
+    def _auto_reveal_bot(self, player_id: str) -> Dict[str, Any]:
+        """Автоматическое открытие карт для бота"""
+        player = self.players.get(player_id)
+        if not player:
+            return {"success": False, "message": "Игрок не найден"}
+        
+        round_cards = player["rounds"].get(self.round, [])
+        if not round_cards:
+            return {"success": False, "message": "Нет карт для открытия"}
+        
+        # Находим первую неоткрытую карту
+        card_index = -1
+        for i, card in enumerate(round_cards):
+            if card not in player["revealed_cards"] and card not in player["cards_by_round_revealed"].get(self.round, []):
+                card_index = i
+                break
+        
+        if card_index == -1:
+            return {"success": False, "message": "Все карты уже открыты"}
+        
+        card = round_cards[card_index]
+        player["revealed_cards"].append(card)
+        player["cards_by_round_revealed"][self.round].append(card)
+        
+        self._add_log(f"🤖 Бот {player['name']} автоматически открыл карту: {format_card_for_display(card)}")
+        
+        all_revealed = len(player["cards_by_round_revealed"][self.round]) >= len(round_cards)
+        
+        if all_revealed:
+            self._move_to_next_player()
+            # ★★★ БОТ АВТОМАТИЧЕСКИ НАЖИМАЕТ "ПРОДОЛЖИТЬ" ★★★
+            self.player_ready(player_id)
+        
+        return {
+            "success": True,
+            "card": card,
+            "all_revealed": all_revealed,
+            "player_name": player["name"],
+        }
+    
     def _move_to_next_player(self) -> None:
         alive = self.get_alive_players()
         
@@ -309,6 +386,10 @@ class GameEngine:
             self.players_ready = set()
             self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
             self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
+            
+            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
+            for pid in self.get_bot_players():
+                self.player_ready(pid)
             return
         
         start_index = self.current_player_index
@@ -326,11 +407,24 @@ class GameEngine:
             if revealed < len(round_cards):
                 self.current_player_index = idx
                 self._add_log(f"🔄 Следующий ход: {player['name']}")
+                
+                # ★★★ ЕСЛИ СЛЕДУЮЩИЙ — БОТ, ОТКРЫВАЕМ АВТОМАТИЧЕСКИ ★★★
+                if player.get("is_bot", False):
+                    asyncio.create_task(self._auto_reveal_bot_async(pid))
                 return
         
         self.phase = GamePhase.READY
         self.players_ready = set()
         self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
+        
+        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
+        for pid in self.get_bot_players():
+            self.player_ready(pid)
+    
+    async def _auto_reveal_bot_async(self, player_id: str):
+        """Асинхронное автоматическое открытие карт для бота"""
+        await asyncio.sleep(0.5)
+        self._auto_reveal_bot(player_id)
     
     def player_ready(self, player_id: str) -> Dict[str, Any]:
         if self.phase != GamePhase.READY:
@@ -370,11 +464,30 @@ class GameEngine:
         self.votes = {}
         self._add_log(f"🗳️ НАЧАЛО ГОЛОСОВАНИЯ! Раунд {self.round}")
         
+        # ★★★ БОТЫ АВТОМАТИЧЕСКИ ГОЛОСУЮТ ★★★
+        asyncio.create_task(self._auto_vote_bots())
+        
         return {
             "success": True,
             "phase": "voting",
             "message": "Голосование началось!",
         }
+    
+    async def _auto_vote_bots(self):
+        """Автоматическое голосование ботов"""
+        await asyncio.sleep(1)
+        
+        for pid in self.get_bot_players():
+            if pid in self.observer_players or pid in self.eliminated_players:
+                continue
+            
+            # Бот выбирает случайную цель
+            alive = self.get_alive_players()
+            targets = [p for p in alive if p != pid]
+            if targets:
+                target = random.choice(targets)
+                self.submit_vote(pid, target)
+                await asyncio.sleep(0.5)
     
     def submit_vote(self, voter_id: str, target_id: str) -> Dict[str, Any]:
         if self.phase == GamePhase.FINAL_VOTING:
@@ -492,6 +605,9 @@ class GameEngine:
         
         self._add_log(f"📝 НАЧАЛО РАУНДА {self.round}")
         
+        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЧИНАЮТ ИГРАТЬ В НОВОМ РАУНДЕ ★★★
+        asyncio.create_task(self._auto_play_bots())
+        
         return {
             "success": True,
             "new_round": self.round,
@@ -525,11 +641,29 @@ class GameEngine:
         self.final_votes = {}
         self._add_log("🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ! Кто тебе нравится?")
         
+        # ★★★ БОТЫ АВТОМАТИЧЕСКИ ГОЛОСУЮТ В ФИНАЛЕ ★★★
+        asyncio.create_task(self._auto_final_vote_bots())
+        
         return {
             "success": True,
             "phase": "final_voting",
             "message": "Голосуйте за игрока, который вам нравится!",
         }
+    
+    async def _auto_final_vote_bots(self):
+        """Автоматическое финальное голосование ботов"""
+        await asyncio.sleep(1)
+        
+        for pid in self.get_bot_players():
+            if pid in self.observer_players or pid in self.eliminated_players:
+                continue
+            
+            alive = self.get_alive_players()
+            targets = [p for p in alive if p != pid]
+            if targets:
+                target = random.choice(targets)
+                self.submit_final_vote(pid, target)
+                await asyncio.sleep(0.5)
     
     def submit_final_vote(self, voter_id: str, target_id: str) -> Dict[str, Any]:
         if self.phase != GamePhase.FINAL_VOTING:
