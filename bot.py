@@ -2289,6 +2289,7 @@ async def main():
     
     app = web.Application(middlewares=[cors_middleware])
     
+    # Убедитесь, что каждый путь добавляется ТОЛЬКО ОДИН РАЗ
     app.router.add_get('/', serve_html)
     app.router.add_get('/style.css', serve_css)
     app.router.add_options('/api/{path:.*}', handle_options)
