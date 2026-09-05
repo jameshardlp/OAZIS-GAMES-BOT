@@ -1172,7 +1172,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             // Обновляем информацию о раунде
             document.getElementById('round-number').textContent = 'Раунд ' + (gameState.currentRound || 0) + '/' + gameState.maxRounds;
             
-            var phaseText = {
+            var phaseText = {{
                 'waiting': 'Ожидание',
                 'playing': 'Открытие карт',
                 'ready': 'Готов к голосованию',
@@ -1181,7 +1181,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 'final_ready': 'Финальная фаза',
                 'final_voting': 'Финальное голосование',
                 'finished': 'Завершена'
-            };
+            }};
             document.getElementById('round-phase').textContent = phaseText[gameState.status] || gameState.status;
             
             // Показываем катастрофу
