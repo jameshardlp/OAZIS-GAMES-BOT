@@ -327,6 +327,17 @@
                     gameState.maxRounds = data.max_rounds || 5;
                     gameState.disaster = data.disaster || null;
                     
+                    var myData = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                    if (myData) {
+                        gameState.health = myData.health || 3;
+                        gameState.maxHealth = myData.max_health || 3;
+                        gameState.role = myData.role || 'Неизвестно';
+                        gameState.roleSkill = myData.role_skill || 'Нет способности';
+                        gameState.skillUsed = myData.skill_used || false;
+                        gameState.myCards = myData.cards || [];
+                        gameState.revealedCards = myData.revealed_cards || [];
+                    }
+                    
                     var playerExists = gameState.players.some(function(p) {
                         return String(p.id) === String(gameState.playerId);
                     });
@@ -334,6 +345,11 @@
                     if (!playerExists && gameState.status === 'waiting') {
                         await joinGame();
                         await refreshGameState();
+                    } else if (playerExists) {
+                        debugLog('✅ Игрок уже в игре, обновляем состояние');
+                        if (gameState.status === 'playing' || gameState.status === 'ready') {
+                            await getMyCards();
+                        }
                     }
                     
                     updateUI();
@@ -346,6 +362,12 @@
                     }
                     if (gameState.status === 'finished') {
                         showResults();
+                    }
+                } else {
+                    debugLog('🆕 Игра не найдена, создаём новую');
+                    if (gameState.status === 'waiting') {
+                        await joinGame();
+                        await refreshGameState();
                     }
                 }
             } catch (error) {
