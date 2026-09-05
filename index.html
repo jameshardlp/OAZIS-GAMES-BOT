@@ -360,8 +360,11 @@
                 return;
             }
             
-            if (gameState.players.length < 4) {
-                alert('Нужно минимум 4 игрока! Сейчас: ' + gameState.players.length);
+            // ★★★ СЧИТАЕМ ВСЕХ ИГРОКОВ (ВКЛЮЧАЯ БОТОВ) ★★★
+            var allPlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            
+            if (allPlayers.length < 4) {
+                alert('Нужно минимум 4 игрока (включая ботов)! Сейчас: ' + allPlayers.length);
                 return;
             }
             
@@ -383,9 +386,12 @@
                     gameState.disaster = data.disaster || null;
                     updateUI();
                     await refreshGameState();
+                } else {
+                    alert(data.message || 'Ошибка запуска игры');
                 }
             } catch (error) {
                 debugLog('❌ Ошибка: ' + error.message);
+                alert('Ошибка запуска игры: ' + error.message);
             }
         }
 
@@ -747,6 +753,7 @@
             var container = document.getElementById('players-list');
             container.innerHTML = '';
             
+            // ★★★ ПОКАЗЫВАЕМ ВСЕХ ИГРОКОВ ★★★
             gameState.players.forEach(function(player) {
                 var div = document.createElement('div');
                 div.className = 'player-item';
@@ -763,19 +770,26 @@
             });
             
             var startBtn = document.getElementById('start-game');
+            
+            // ★★★ СЧИТАЕМ ВСЕХ АКТИВНЫХ ИГРОКОВ (ВКЛЮЧАЯ БОТОВ) ★★★
             var allPlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
             var humanPlayers = allPlayers.filter(p => !p.is_bot);
+            
+            debugLog('📊 Всего активных: ' + allPlayers.length + ' (людей: ' + humanPlayers.length + ')');
             
             if (allPlayers.length >= 4 && gameState.isHost && gameState.status === 'waiting') {
                 startBtn.style.display = 'block';
                 startBtn.textContent = '🔥 Начать игру (' + allPlayers.length + ' игроков, людей: ' + humanPlayers.length + ')';
                 startBtn.disabled = false;
+                debugLog('✅ Кнопка "Начать" активна');
             } else if (gameState.isHost && gameState.status === 'waiting') {
                 startBtn.style.display = 'block';
                 startBtn.textContent = '👥 Нужно ещё ' + (4 - allPlayers.length) + ' игроков (включая ботов)';
                 startBtn.disabled = true;
+                debugLog('⏳ Кнопка "Начать" заблокирована, нужно ' + (4 - allPlayers.length) + ' игроков');
             } else {
                 startBtn.style.display = 'none';
+                debugLog('❌ Кнопка "Начать" скрыта');
             }
         }
 
