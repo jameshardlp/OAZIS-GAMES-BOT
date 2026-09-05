@@ -2268,7 +2268,12 @@ async def cors_middleware(request, handler):
 # 13. СТАТИЧЕСКИЕ ФАЙЛЫ
 # ============================================
 async def serve_html(request):
-    return web.Response(text=HTML_PAGE, content_type='text/html')
+    try:
+        with open('index.html', 'r', encoding='utf-8') as f:
+            html_content = f.read()
+        return web.Response(text=html_content, content_type='text/html')
+    except FileNotFoundError:
+        return web.Response(text='<h1>404 - index.html не найден</h1>', content_type='text/html', status=404)
 
 async def serve_css(request):
     return web.Response(text=CSS_STYLES, content_type='text/css')
