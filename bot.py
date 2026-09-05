@@ -612,10 +612,21 @@ async def api_get_cards(request):
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
+        round_num = game.round
+        round_cards = player.get('rounds', {}).get(round_num, [])
+        revealed_in_round = player.get('cards_by_round_revealed', {}).get(round_num, [])
+        cards_with_status = []
+        for card in round_cards:
+            card_copy = card.copy()
+            card_copy['isRevealed'] = card in revealed_in_round
+            cards_with_status.append(card_copy)
+        
         return web.json_response({
             'status': 'success',
-            'cards': player.get('all_cards', []),
-            'revealed': player.get('revealed_cards', []),
+            'cards': cards_with_status,
+            'revealed': revealed_in_round,
+            'round': round_num,
+            'total_cards': len(round_cards),
         })
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -639,9 +650,26 @@ async def api_reveal_card(request):
         result = game.reveal_card(str(player_id), card_index)
         
         if result.get('success'):
-            return web.json_response(result)
-        else:
-            return web.json_response({'status': 'error', 'message': result.get('message', 'Ошибка')}, status=400)
+            player = game.players.get(str(player_id))
+            if player:
+                round_num = game.round
+                round_cards = player.get('rounds', {}).get(round_num, [])
+                revealed_in_round = player.get('cards_by_round_revealed', {}).get(round_num, [])
+                cards_with_status = []
+                for card in round_cards:
+                    card_copy = card.copy()
+                    card_copy['isRevealed'] = card in revealed_in_round
+                    cards_with_status.append(card_copy)
+                
+                return web.json_response({
+                    'status': 'success',
+                    'card': result.get('card'),
+                    'revealed_cards': cards_with_status,
+                    'all_revealed': result.get('all_revealed', False),
+                    'player_name': result.get('player_name', ''),
+                })
+        
+        return web.json_response({'status': 'error', 'message': result.get('message', 'Ошибка')}, status=400)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
