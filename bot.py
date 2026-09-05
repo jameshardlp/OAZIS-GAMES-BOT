@@ -1353,7 +1353,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     var healthStr = '❤️'.repeat(p.health || 3) + '🖤'.repeat((p.max_health || 3) - (p.health || 3));
                     html += `
                         <div class="result-card survivors">
-                            <strong>${{p.name}}</strong> ({{p.role || 'Неизвестно'}})
+                            <strong>${{p.name}}</strong> (${{p.role || 'Неизвестно'}})
                             <span style="margin-left:10px;">${{healthStr}}</span>
                         </div>
                     `;
@@ -1365,7 +1365,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 eliminated.forEach(function(p) {{
                     html += `
                         <div class="result-card eliminated">
-                            <strong>${{p.name}}</strong> ({{p.role || 'Неизвестно'}})
+                            <strong>${{p.name}}</strong> (${{p.role || 'Неизвестно'}})
                             <span style="margin-left:10px;">👀 Наблюдатель</span>
                         </div>
                     `;
