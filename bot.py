@@ -15,8 +15,10 @@ from aiohttp import web
 from dotenv import load_dotenv
 
 # ============================================
-# ИМПОРТ МОДУЛЯ ОТЛАДКИ
+# ИМПОРТ МОДУЛЕЙ
 # ============================================
+
+# Отладка
 from debug_manager import (
     is_debug_enabled,
     toggle_debug,
@@ -27,6 +29,41 @@ from debug_manager import (
     get_debug_command_response,
     api_debug_status,
     init_debug
+)
+
+# Генератор карт
+from cards_generator import (
+    generate_full_character,
+    generate_character_with_specific_role,
+    format_card_for_display,
+    get_full_biography,
+    get_card_emoji_for_display,
+    ROLES,
+    get_random_disaster,
+)
+
+# Игровой движок
+from game_engine import (
+    GameEngine,
+    GamePhase,
+    PlayerStatus,
+    create_game,
+)
+
+# Биографии
+from biography_builder import (
+    BiographyBuilder,
+    get_player_biography,
+    get_player_biography_html,
+    get_final_title_sheet,
+    generate_biography_preview,
+)
+
+# Звуки
+from sound_manager import (
+    SoundManager,
+    SoundType,
+    create_sound_manager,
 )
 
 # ============================================
@@ -44,16 +81,19 @@ logging.basicConfig(
 )
 
 print("=" * 60)
-print("🚀 КАФЕ ОАЗИС - БОТ ЗАПУСКАЕТСЯ!")
+print("🚀 КАФЕ ОАЗИС 2.0 - БОТ ЗАПУСКАЕТСЯ!")
 print("=" * 60)
 print("📋 Логирование включено на уровень DEBUG")
 print("=" * 60)
 
 # ============================================
-# 2.5. ИНИЦИАЛИЗАЦИЯ ОТЛАДКИ
+# 2.5. ИНИЦИАЛИЗАЦИЯ ОТЛАДКИ И ЗВУКОВ
 # ============================================
-init_debug(True)  # По умолчанию включена
+init_debug(True)
 print("📡 Модуль отладки инициализирован")
+
+sound_manager = create_sound_manager()
+print("🔊 Модуль звуков инициализирован")
 
 # ============================================
 # 3. КОНФИГУРАЦИЯ
@@ -80,53 +120,55 @@ print(f"🎮 Game Short Name: oaziscaffee")
 # ============================================
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher(storage=MemoryStorage())
-games = {}
+games = {}  # chat_id -> GameEngine
 CARDS = None
 
 BOT_NAMES = [
     "🤖 Бот-Шериф", "🤖 Бот-Бармен", "🤖 Бот-Повар",
     "🤖 Бот-Механик", "🤖 Бот-Доктор", "🤖 Бот-Инженер",
     "🤖 Бот-Учёный", "🤖 Бот-Солдат", "🤖 Бот-Разведчик",
-    "🤖 Бот-Снайпер", "🤖 Бот-Сапёр", "🤖 Бот-Медик"
+    "🤖 Бот-Снайпер", "🤖 Бот-Сапёр", "🤖 Бот-Медик",
+    "🤖 Бот-Клоун", "🤖 Бот-Фокусник", "🤖 Бот-Таксист",
 ]
 
 # ============================================
 # 5. ТЕКСТЫ
 # ============================================
-RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС»**
+RULES_TEXT = """📖 **ПРАВИЛА ИГРЫ «КАФЕ ОАЗИС 2.0»**
 
-🎯 **Цель:** Убедить других, что ты достоин попасть в убежище.
+🎯 **Цель:** Выжить 5 раундов и получить симпатию других игроков!
 
-🃏 **Карты:** Каждый игрок получает 5 карт:
-• Роль (профессия)
-• Здоровье (физическое состояние)
-• Навык (умение выживать)
-• Предмет (полезная вещь)
-• Секрет (личная тайна)
+🃏 **Карты:** Каждый раунд вы открываете по 5 новых карт:
+• **Раунд 1:** Роль + Навык + 3 черты характера
+• **Раунд 2:** Оружие + Предмет + 3 факта
+• **Раунд 3:** История из прошлого + 4 черты
+• **Раунд 4:** Союзник/Враг + Здоровье + 3 черты
+• **Раунд 5:** План на жизнь + Секрет + 3 бонусные черты
 
-📋 **Ход игры:**
-1️⃣ Каждый раунд игроки открывают по одной карте
-2️⃣ После открытия всех карт — нажмите «Продолжить»
-3️⃣ Когда все готовы — начинается голосование
-4️⃣ Кто набрал больше голосов — выбывает и становится наблюдателем
-5️⃣ Игра длится до последнего выжившего
+❤️ **Здоровье:** У каждого 3 жизни. При вылете вы теряете 1 жизнь. 
+Если жизни закончились — вы полностью выбываете.
 
-🏆 **Победа:** Последний выживший получает кубок!
-👀 **Наблюдатели:** Выбывшие игроки следят за игрой."""
+⚡ **Способности:** У каждой роли есть уникальная способность, 
+которую можно использовать 1 раз за раунд.
+
+📜 **Финал:** В конце игры вы сможете увидеть полную биографию 
+каждого игрока и проголосовать за того, кто вам нравится!
+
+🏆 **Победа:** Игрок, набравший больше всех симпатий в финале!"""
 
 # ============================================
-# 6. HTML СТРАНИЦА (с интеграцией отладки)
+# 6. HTML СТРАНИЦА (с интеграцией звуков и отладки)
 # ============================================
-# Получаем HTML для панели отладки и JS
 DEBUG_PANEL_HTML = get_debug_panel_html()
 DEBUG_JS = get_debug_js()
+SOUND_JS = sound_manager.get_sound_html()
 
 HTML_PAGE = f'''<!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Кафе ОАЗИС</title>
+    <title>Кафе ОАЗИС 2.0</title>
     <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -139,25 +181,48 @@ HTML_PAGE = f'''<!DOCTYPE html>
         {DEBUG_PANEL_HTML}
         
         <div id="game-container">
+            <!-- Лобби -->
             <div id="lobby">
                 <h2>👥 Лобби</h2>
                 <div id="players-list"></div>
                 <button id="start-game" class="btn-neon">🔥 Начать игру</button>
             </div>
+            
+            <!-- Игровая область -->
             <div id="game-area" style="display:none;">
+                <!-- Информация о раунде -->
+                <div id="round-info" style="text-align:center;padding:10px;background:#1a0a00;border-radius:8px;border:1px solid #FFB000;margin-bottom:15px;">
+                    <span id="round-number" style="color:#FFB000;font-size:1.5rem;">Раунд 1</span>
+                    <span id="round-phase" style="color:#f5e6d3;opacity:0.7;margin-left:15px;">Открытие карт</span>
+                    <div id="current-turn" style="color:#FFB000;font-size:0.9rem;margin-top:5px;"></div>
+                </div>
+                
+                <!-- Карты персонажа -->
                 <div id="character-cards">
                     <h2>🎴 Твои карты</h2>
                     <div id="cards-container"></div>
                     <button id="reveal-card" class="btn-neon">🃏 Открыть карту</button>
                     <button id="continue-btn" class="btn-neon" style="display:none;background:#FFB000;color:#0a0a0a;">▶️ Продолжить</button>
                 </div>
+                
+                <!-- Голосование -->
                 <div id="voting-area" style="display:none;">
                     <h2>🗳️ Голосование</h2>
                     <div id="voting-list"></div>
                     <button id="vote-btn" class="btn-neon">✅ Проголосовать</button>
                 </div>
+                
+                <!-- Способности -->
+                <div id="skill-area" style="display:none;margin-top:15px;">
+                    <h2>⚡ Способность</h2>
+                    <div id="skill-info"></div>
+                    <div id="skill-targets"></div>
+                    <button id="use-skill-btn" class="btn-neon" style="border-color:#00FF88;color:#00FF88;">⚡ Использовать способность</button>
+                </div>
             </div>
         </div>
+        
+        <!-- Результаты -->
         <div id="results" style="display:none;">
             <h2>🏆 Итоги</h2>
             <div id="results-list"></div>
@@ -171,8 +236,8 @@ HTML_PAGE = f'''<!DOCTYPE html>
         // ★★★ ВСТРАИВАЕМ МОДУЛЬ ОТЛАДКИ ★★★
         {DEBUG_JS}
         
-        // ★★★ ИНИЦИАЛИЗИРУЕМ ОТЛАДКУ ПРИ ЗАГРУЗКЕ ★★★
-        // Функция initDebug() теперь доступна из модуля
+        // ★★★ ВСТРАИВАЕМ МОДУЛЬ ЗВУКОВ ★★★
+        {SOUND_JS}
         
         const gameState = {{
             playerId: null,
@@ -185,7 +250,22 @@ HTML_PAGE = f'''<!DOCTYPE html>
             maxRounds: 5,
             status: 'waiting',
             isHost: false,
+            isObserver: false,
+            isEliminated: false,
+            health: 3,
+            maxHealth: 3,
+            role: 'Неизвестно',
+            roleSkill: 'Нет способности',
+            skillUsed: false,
+            canUseSkill: false,
+            gameLog: [],
+            disaster: null,
+            finalBiographies: {{}},
         }};
+
+        // ============================================
+        // ОСНОВНЫЕ ФУНКЦИИ
+        // ============================================
 
         async function refreshGameState(retryCount) {{
             if (retryCount === undefined) retryCount = 0;
@@ -210,10 +290,26 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.chat_id) {{
                     gameState.players = data.players || [];
-                    gameState.status = data.status || 'waiting';
+                    gameState.status = data.phase || 'waiting';
                     gameState.isHost = data.is_host || false;
+                    gameState.isObserver = data.is_observer || false;
+                    gameState.isEliminated = data.is_eliminated || false;
                     gameState.currentRound = data.round || 0;
                     gameState.maxRounds = data.max_rounds || 5;
+                    gameState.gameLog = data.game_log || [];
+                    gameState.disaster = data.disaster || null;
+                    
+                    // Обновляем данные игрока
+                    var myData = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                    if (myData) {{
+                        gameState.health = myData.health || 3;
+                        gameState.maxHealth = myData.max_health || 3;
+                        gameState.role = myData.role || 'Неизвестно';
+                        gameState.roleSkill = myData.role_skill || 'Нет способности';
+                        gameState.skillUsed = myData.skill_used || false;
+                        gameState.myCards = myData.cards || [];
+                        gameState.revealedCards = myData.revealed_cards || [];
+                    }}
                     
                     updateUI();
                     
@@ -224,17 +320,27 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     
                     if (gameState.status === 'playing' || gameState.status === 'ready') {{
                         debugLog('🃏 Статус "' + gameState.status + '" — загружаем карты');
-                        await getMyCards();
+                        renderCards();
+                    }}
+                    
+                    if (gameState.status === 'final_ready') {{
+                        debugLog('📜 Финальная фаза!');
+                        await showFinalTitleSheet();
+                    }}
+                    
+                    if (gameState.status === 'final_voting') {{
+                        debugLog('🗳️ Финальное голосование!');
+                        await startFinalVoting();
                     }}
                     
                     if (gameState.status === 'finished') {{
                         debugLog('🏆 Игра завершена!');
-                        updateUI();
+                        showResults();
                     }}
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка обновления: ' + error.message);
-                if (retryCount < 2) {{
+                if (retryCount < 3) {{
                     setTimeout(function() {{
                         refreshGameState(retryCount + 1);
                     }}, 1000);
@@ -242,8 +348,11 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
+        // ============================================
+        // ИНИЦИАЛИЗАЦИЯ
+        // ============================================
+
         document.addEventListener('DOMContentLoaded', function() {{
-            // Инициализируем отладку
             initDebug().then(function() {{
                 debugLog('✅ Отладка инициализирована');
             }});
@@ -268,7 +377,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var userNameFromUrl = urlParams.get('user_name');
             var chatIdFromUrl = urlParams.get('chat_id');
             
-            // ★★★ ПОЛУЧАЕМ CHAT_ID ИЗ TELEGRAM WEBAPP DATA ★★★
+            // Получаем chat_id из Telegram WebApp Data
             var chatIdFromInitData = null;
             try {{
                 var initData = window.Telegram.WebApp.initDataUnsafe;
@@ -280,7 +389,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 debugLog('⚠️ Не удалось получить chat из initData');
             }}
             
-            // Используем chat_id из URL (если есть) или из initData
             gameState.chatId = chatIdFromUrl || chatIdFromInitData || null;
             
             if (userIdFromUrl) {{
@@ -314,10 +422,10 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 }}
             }}
             
-            // Если chat_id не получен, используем player_id как chat_id
+            // Запасной вариант для chat_id
             if (!gameState.chatId && gameState.playerId) {{
                 gameState.chatId = gameState.playerId;
-                debugLog('⚠️ chat_id не найден, используем player_id как chat_id: ' + gameState.chatId);
+                debugLog('⚠️ chat_id не найден, используем player_id: ' + gameState.chatId);
             }}
             
             if (!gameState.chatId) {{
@@ -351,50 +459,24 @@ HTML_PAGE = f'''<!DOCTYPE html>
             
             connectToGame();
             
-            var startBtn = document.getElementById('start-game');
-            if (startBtn) {{
-                debugLog('✅ Кнопка "Начать" найдена');
-                startBtn.addEventListener('click', function() {{
-                    debugLog('🔄 НАЖАТА КНОПКА "НАЧАТЬ"!');
-                    startGame();
-                }});
-            }}
-            
-            var revealBtn = document.getElementById('reveal-card');
-            if (revealBtn) {{
-                debugLog('✅ Кнопка "Открыть карту" найдена');
-                revealBtn.addEventListener('click', function() {{
-                    debugLog('🔄 НАЖАТА КНОПКА "ОТКРЫТЬ КАРТУ"!');
-                    revealCard();
-                }});
-            }}
-            
-            var continueBtn = document.getElementById('continue-btn');
-            if (continueBtn) {{
-                debugLog('✅ Кнопка "Продолжить" найдена');
-                continueBtn.addEventListener('click', function() {{
-                    debugLog('🔄 НАЖАТА КНОПКА "ПРОДОЛЖИТЬ"!');
-                    continueGame();
-                }});
-            }}
-            
-            var voteBtn = document.getElementById('vote-btn');
-            if (voteBtn) {{
-                debugLog('✅ Кнопка "Проголосовать" найдена');
-                voteBtn.addEventListener('click', function() {{
-                    debugLog('🔄 НАЖАТА КНОПКА "ПРОГОЛОСОВАТЬ"!');
-                    submitVote();
-                }});
-            }}
+            // Кнопки
+            document.getElementById('start-game')?.addEventListener('click', startGame);
+            document.getElementById('reveal-card')?.addEventListener('click', revealCard);
+            document.getElementById('continue-btn')?.addEventListener('click', continueGame);
+            document.getElementById('vote-btn')?.addEventListener('click', submitVote);
+            document.getElementById('use-skill-btn')?.addEventListener('click', useSkill);
             
             debugLog('✅ Инициализация завершена');
         }});
 
+        // ============================================
+        // ПОДКЛЮЧЕНИЕ К ИГРЕ
+        // ============================================
+
         async function connectToGame() {{
             debugLog('🔄 Подключение к API...');
             try {{
-                var url = API_BASE + '/api/game/state';
-                var response = await fetch(url, {{
+                var response = await fetch(API_BASE + '/api/game/state', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
                     body: JSON.stringify({{
@@ -408,10 +490,14 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.chat_id) {{
                     gameState.players = data.players || [];
-                    gameState.status = data.status || 'waiting';
+                    gameState.status = data.phase || 'waiting';
                     gameState.isHost = data.is_host || false;
+                    gameState.isObserver = data.is_observer || false;
+                    gameState.isEliminated = data.is_eliminated || false;
                     gameState.currentRound = data.round || 0;
                     gameState.maxRounds = data.max_rounds || 5;
+                    gameState.gameLog = data.game_log || [];
+                    gameState.disaster = data.disaster || null;
                     
                     var playerExists = gameState.players.some(function(p) {{
                         return String(p.id) === String(gameState.playerId);
@@ -425,11 +511,23 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     updateUI();
                     
                     if (gameState.status === 'playing' || gameState.status === 'ready') {{
-                        await getMyCards();
+                        renderCards();
                     }}
                     
                     if (gameState.status === 'voting') {{
                         await startVoting();
+                    }}
+                    
+                    if (gameState.status === 'final_ready') {{
+                        await showFinalTitleSheet();
+                    }}
+                    
+                    if (gameState.status === 'final_voting') {{
+                        await startFinalVoting();
+                    }}
+                    
+                    if (gameState.status === 'finished') {{
+                        showResults();
                     }}
                 }}
             }} catch (error) {{
@@ -458,11 +556,16 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     gameState.players = data.players || [];
                     updateUI();
                     debugLog('✅ Присоединился: ' + userName);
+                    playSound('click');
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка присоединения: ' + error.message);
             }}
         }}
+
+        // ============================================
+        // УПРАВЛЕНИЕ ИГРОЙ
+        // ============================================
 
         async function startGame() {{
             debugLog('🔄 ЗАПУСК startGame()');
@@ -488,6 +591,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
             
             try {{
+                playSound('voting_start');
                 var response = await fetch(API_BASE + '/api/game/start', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -502,43 +606,36 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.status === 'success') {{
                     gameState.status = 'playing';
+                    gameState.disaster = data.disaster || null;
                     updateUI();
                     await refreshGameState();
-                    await getMyCards();
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка: ' + error.message);
             }}
         }}
 
-        async function getMyCards() {{
-            try {{
-                var response = await fetch(API_BASE + '/api/game/cards', {{
-                    method: 'POST',
-                    headers: {{'Content-Type': 'application/json'}},
-                    body: JSON.stringify({{
-                        player_id: gameState.playerId,
-                        chat_id: gameState.chatId,
-                    }})
-                }});
-                
-                var data = await response.json();
-                
-                if (data.status === 'success') {{
-                    gameState.myCards = data.cards || [];
-                    gameState.revealedCards = data.revealed || [];
-                    renderCards();
-                }}
-            }} catch (error) {{
-                debugLog('❌ Ошибка получения карт: ' + error.message);
-            }}
-        }}
-
         async function revealCard() {{
             debugLog('🃏 Открытие карты...');
-            var cardIndex = gameState.myCards.findIndex(function(c) {{
-                return !c.isRevealed;
-            }});
+            
+            if (gameState.isObserver || gameState.isEliminated) {{
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '👀',
+                    message: 'Вы в режиме наблюдения и не можете открывать карты',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            // Находим первую неоткрытую карту
+            var cardIndex = -1;
+            for (var i = 0; i < gameState.myCards.length; i++) {{
+                if (!gameState.myCards[i].isRevealed) {{
+                    cardIndex = i;
+                    break;
+                }}
+            }}
             
             if (cardIndex === -1) {{
                 debugLog('⚠️ Все карты уже открыты');
@@ -552,6 +649,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
             
             try {{
+                playSound('card_flip');
                 var response = await fetch(API_BASE + '/api/game/reveal', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -567,13 +665,12 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 
                 if (data.status === 'success') {{
                     gameState.myCards[cardIndex].isRevealed = true;
-                    gameState.revealedCards = data.revealed_cards || [];
                     renderCards();
                     debugLog('✅ Карта открыта, осталось: ' + gameState.myCards.filter(function(c) {{ return !c.isRevealed; }}).length);
                     
                     setTimeout(function() {{
                         refreshGameState();
-                    }}, 1500);
+                    }}, 1000);
                 }} else {{
                     debugLog('❌ Ошибка открытия карты: ' + (data.message || 'неизвестно'));
                     var tg = window.Telegram.WebApp;
@@ -601,6 +698,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             document.getElementById('continue-btn').disabled = true;
             
             try {{
+                playSound('click');
                 var response = await fetch(API_BASE + '/api/game/continue', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -621,7 +719,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         await startVoting();
                     }} else {{
                         debugLog('⏳ Ожидаем остальных игроков... (' + data.ready_count + '/' + data.total_players + ')');
-                        document.getElementById('continue-btn').textContent = '⏳ Ожидание остальных (' + data.ready_count + '/' + data.total_players + ')';
+                        document.getElementById('continue-btn').textContent = '⏳ Ожидание (' + data.ready_count + '/' + data.total_players + ')';
                         document.getElementById('continue-btn').style.display = 'block';
                         document.getElementById('continue-btn').disabled = true;
                         
@@ -643,8 +741,13 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
+        // ============================================
+        // ГОЛОСОВАНИЕ
+        // ============================================
+
         async function startVoting() {{
             debugLog('🗳️ ЗАПУСК ГОЛОСОВАНИЯ...');
+            playSound('voting_start');
             gameState.status = 'voting';
             updateUI();
             
@@ -663,6 +766,15 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 if (data.status === 'success') {{
                     renderVotingList(data.players);
                     document.getElementById('vote-btn').disabled = false;
+                    
+                    // Показываем кнопку способности
+                    if (gameState.roleSkill && gameState.roleSkill !== 'Нет способности' && !gameState.skillUsed) {{
+                        document.getElementById('skill-area').style.display = 'block';
+                        document.getElementById('skill-info').innerHTML = 
+                            '⚡ <strong>' + gameState.roleSkill + '</strong> — ' + 
+                            (gameState.players.find(p => String(p.id) === String(gameState.playerId))?.role_desc || '');
+                        gameState.canUseSkill = true;
+                    }}
                 }}
             }} catch (error) {{
                 debugLog('❌ Ошибка голосования: ' + error.message);
@@ -682,10 +794,21 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 var card = document.createElement('div');
                 card.className = 'character-card voting-card';
                 var roleText = player.role || 'Без роли';
+                // Показываем открытые карты игрока (кроме секретов)
+                var cardsHtml = '';
+                if (player.revealed_cards && player.revealed_cards.length > 0) {{
+                    var shownCards = player.revealed_cards.filter(c => c.type !== 'secret');
+                    if (shownCards.length > 0) {{
+                        cardsHtml = '<div style="font-size:0.7rem;opacity:0.6;margin-top:5px;">' +
+                            shownCards.map(c => '🃏 ' + c.name).join(' ') +
+                            '</div>';
+                    }}
+                }}
                 card.innerHTML = `
                     <div class="card-type">Игрок</div>
                     <div class="card-name">${{player.name}}</div>
-                    <div class="card-effect">${{roleText}}</div>
+                    <div class="card-effect">🎴 ${{roleText}}</div>
+                    ${{cardsHtml}}
                     <input type="radio" name="vote" value="${{player.id}}" id="vote-${{player.id}}">
                     <label for="vote-${{player.id}}">Голосовать</label>
                 `;
@@ -714,6 +837,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
             debugLog('🎯 Голос за ID: ' + targetId);
             
             try {{
+                playSound('click');
                 var response = await fetch(API_BASE + '/api/game/vote', {{
                     method: 'POST',
                     headers: {{'Content-Type': 'application/json'}},
@@ -734,6 +858,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     if (data.game_finished) {{
                         debugLog('🏆 Игра завершена!');
                         if (data.winner === 'human') {{
+                            playSound('win');
                             var tg = window.Telegram.WebApp;
                             tg.showPopup({{
                                 title: '🏆 ПОБЕДА!',
@@ -741,6 +866,7 @@ HTML_PAGE = f'''<!DOCTYPE html>
                                 buttons: [{{text: '🎊 Ура!', type: 'default'}}]
                             }});
                         }} else if (data.winner === 'bots') {{
+                            playSound('elimination');
                             var tg = window.Telegram.WebApp;
                             tg.showPopup({{
                                 title: '🤖',
@@ -751,6 +877,9 @@ HTML_PAGE = f'''<!DOCTYPE html>
                         await refreshGameState();
                     }} else if (data.all_voted) {{
                         debugLog('🔥 Все проголосовали!');
+                        if (data.eliminated) {{
+                            playSound('elimination');
+                        }}
                         setTimeout(function() {{
                             refreshGameState();
                         }}, 1500);
@@ -780,17 +909,292 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
+        // ============================================
+        // СПОСОБНОСТИ
+        // ============================================
+
+        async function useSkill() {{
+            debugLog('⚡ ИСПОЛЬЗОВАНИЕ СПОСОБНОСТИ');
+            
+            if (!gameState.canUseSkill || gameState.skillUsed) {{
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '⚡',
+                    message: 'Вы уже использовали способность в этом раунде',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            // Показываем список игроков для выбора цели
+            var alivePlayers = gameState.players.filter(p => 
+                String(p.id) !== String(gameState.playerId) && 
+                !p.is_observer && 
+                !p.is_eliminated
+            );
+            
+            if (alivePlayers.length === 0) {{
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '⚡',
+                    message: 'Нет доступных целей для способности',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            // Создаём кнопки для выбора цели
+            var buttons = alivePlayers.map(function(p) {{
+                return {{text: p.name, id: p.id}};
+            }});
+            
+            var tg = window.Telegram.WebApp;
+            tg.showPopup({{
+                title: '⚡ Выберите цель',
+                message: 'Кого вы хотите использовать способность?',
+                buttons: buttons.map(function(b) {{
+                    return {{text: b.text, id: b.id, type: 'default'}};
+                }}).concat([{{text: 'Отмена', type: 'cancel'}}])
+            }}, function(result) {{
+                if (result && result.id) {{
+                    executeSkill(result.id);
+                }}
+            }});
+        }}
+
+        async function executeSkill(targetId) {{
+            debugLog('⚡ Применение способности к ' + targetId);
+            
+            try {{
+                playSound('skill');
+                var response = await fetch(API_BASE + '/api/game/skill', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        target_id: parseInt(targetId),
+                    }})
+                }});
+                
+                var data = await response.json();
+                debugLog('📦 Ответ способности: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {{
+                    gameState.skillUsed = true;
+                    gameState.canUseSkill = false;
+                    document.getElementById('skill-area').style.display = 'none';
+                    
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '⚡ Способность использована',
+                        message: data.message || 'Способность применена!',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                    
+                    setTimeout(function() {{
+                        refreshGameState();
+                    }}, 1500);
+                }} else {{
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка использования способности',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка способности: ' + error.message);
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+            }}
+        }}
+
+        // ============================================
+        // ФИНАЛЬНАЯ ФАЗА
+        // ============================================
+
+        async function showFinalTitleSheet() {{
+            debugLog('📜 ПОКАЗ ФИНАЛЬНОГО ТИТУЛЬНОГО ЛИСТА');
+            playSound('final');
+            
+            try {{
+                var response = await fetch(API_BASE + '/api/game/final/title', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                    }})
+                }});
+                
+                var data = await response.json();
+                debugLog('📦 Ответ финала: ' + JSON.stringify(data));
+                
+                if (data.status === 'success' && data.html) {{
+                    // Открываем титульный лист в новом окне или в iframe
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '📜 ФИНАЛ',
+                        message: 'Изучите биографии игроков и проголосуйте за того, кто вам нравится!',
+                        buttons: [{{text: '📖 Смотреть биографии', id: 'view', type: 'default'}}]
+                    }}, function(result) {{
+                        if (result && result.id === 'view') {{
+                            // Открываем титульный лист
+                            var win = window.open('', '_blank');
+                            win.document.write(data.html);
+                            win.document.close();
+                        }}
+                    }});
+                    
+                    // Также сохраняем биографии для отображения
+                    gameState.finalBiographies = data.biographies || {{}};
+                    gameState.status = 'final_ready';
+                    updateUI();
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка финального листа: ' + error.message);
+            }}
+        }}
+
+        async function startFinalVoting() {{
+            debugLog('🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ');
+            playSound('voting_start');
+            gameState.status = 'final_voting';
+            updateUI();
+            
+            // Показываем список игроков для финального голосования
+            var alivePlayers = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            
+            if (alivePlayers.length === 0) {{
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '👀',
+                    message: 'Нет игроков для голосования',
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+                return;
+            }}
+            
+            // Создаём кнопки для финального голосования
+            var buttons = alivePlayers.map(function(p) {{
+                return {{text: p.name + ' (' + (p.role || 'Неизвестно') + ')', id: p.id}};
+            }});
+            
+            var tg = window.Telegram.WebApp;
+            tg.showPopup({{
+                title: '🗳️ ФИНАЛЬНОЕ ГОЛОСОВАНИЕ',
+                message: 'Кто из игроков вам нравится больше всего?',
+                buttons: buttons.map(function(b) {{
+                    return {{text: b.text, id: b.id, type: 'default'}};
+                }})
+            }}, function(result) {{
+                if (result && result.id) {{
+                    submitFinalVote(result.id);
+                }}
+            }});
+        }}
+
+        async function submitFinalVote(targetId) {{
+            debugLog('🗳️ Отправка финального голоса за ' + targetId);
+            
+            try {{
+                playSound('click');
+                var response = await fetch(API_BASE + '/api/game/final/vote', {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{
+                        chat_id: gameState.chatId,
+                        player_id: gameState.playerId,
+                        target_id: parseInt(targetId),
+                    }})
+                }});
+                
+                var data = await response.json();
+                debugLog('📦 Ответ финального голоса: ' + JSON.stringify(data));
+                
+                if (data.status === 'success') {{
+                    if (data.game_finished) {{
+                        playSound('win');
+                        var tg = window.Telegram.WebApp;
+                        tg.showPopup({{
+                            title: '🏆 ПОБЕДА!',
+                            message: '🎉 ' + data.winner_name + ' победил в финальном голосовании!',
+                            buttons: [{{text: '🎊 Ура!', type: 'default'}}]
+                        }});
+                        await refreshGameState();
+                        showResults();
+                    }} else {{
+                        var tg = window.Telegram.WebApp;
+                        tg.showPopup({{
+                            title: '✅',
+                            message: 'Ваш голос принят! Ожидаем остальных игроков...',
+                            buttons: [{{text: 'OK', type: 'default'}}]
+                        }});
+                        setTimeout(function() {{
+                            refreshGameState();
+                        }}, 3000);
+                    }}
+                }} else {{
+                    var tg = window.Telegram.WebApp;
+                    tg.showPopup({{
+                        title: '❌',
+                        message: data.message || 'Ошибка голосования',
+                        buttons: [{{text: 'OK', type: 'default'}}]
+                    }});
+                }}
+            }} catch (error) {{
+                debugLog('❌ Ошибка финального голоса: ' + error.message);
+                var tg = window.Telegram.WebApp;
+                tg.showPopup({{
+                    title: '❌',
+                    message: 'Ошибка: ' + error.message,
+                    buttons: [{{text: 'OK', type: 'default'}}]
+                }});
+            }}
+        }}
+
+        // ============================================
+        // ОТОБРАЖЕНИЕ
+        // ============================================
+
         function updateUI() {{
             var lobby = document.getElementById('lobby');
             var gameArea = document.getElementById('game-area');
             var votingArea = document.getElementById('voting-area');
             var results = document.getElementById('results');
+            var skillArea = document.getElementById('skill-area');
+            
+            // Обновляем информацию о раунде
+            document.getElementById('round-number').textContent = 'Раунд ' + (gameState.currentRound || 0) + '/' + gameState.maxRounds;
+            
+            var phaseText = {
+                'waiting': 'Ожидание',
+                'playing': 'Открытие карт',
+                'ready': 'Готов к голосованию',
+                'voting': 'Голосование',
+                'skill': 'Способность',
+                'final_ready': 'Финальная фаза',
+                'final_voting': 'Финальное голосование',
+                'finished': 'Завершена'
+            };
+            document.getElementById('round-phase').textContent = phaseText[gameState.status] || gameState.status;
+            
+            // Показываем катастрофу
+            if (gameState.disaster) {{
+                document.getElementById('current-turn').innerHTML = '💀 ' + gameState.disaster;
+            }}
             
             if (gameState.status === 'waiting' || gameState.status === 'lobby') {{
                 lobby.style.display = 'block';
                 gameArea.style.display = 'none';
                 votingArea.style.display = 'none';
                 results.style.display = 'none';
+                skillArea.style.display = 'none';
                 renderPlayersList();
             }} else if (gameState.status === 'voting') {{
                 lobby.style.display = 'none';
@@ -804,11 +1208,22 @@ HTML_PAGE = f'''<!DOCTYPE html>
                 document.getElementById('character-cards').style.display = 'block';
                 votingArea.style.display = 'none';
                 results.style.display = 'none';
+                skillArea.style.display = 'none';
+                renderCards();
+            }} else if (gameState.status === 'final_ready' || gameState.status === 'final_voting') {{
+                lobby.style.display = 'none';
+                gameArea.style.display = 'block';
+                document.getElementById('character-cards').style.display = 'none';
+                votingArea.style.display = 'none';
+                results.style.display = 'none';
+                skillArea.style.display = 'none';
             }} else if (gameState.status === 'finished') {{
                 lobby.style.display = 'none';
                 gameArea.style.display = 'none';
                 votingArea.style.display = 'none';
                 results.style.display = 'block';
+                skillArea.style.display = 'none';
+                showResults();
             }}
         }}
 
@@ -819,24 +1234,27 @@ HTML_PAGE = f'''<!DOCTYPE html>
             gameState.players.forEach(function(player) {{
                 var div = document.createElement('div');
                 div.className = 'player-item';
-                var hostBadge = player.isHost ? '<span class="host-badge">⭐ Ведущий</span>' : '';
+                var hostBadge = player.is_host ? '<span class="host-badge">⭐ Ведущий</span>' : '';
                 var isBot = player.is_bot ? '🤖 ' : '';
                 var observerBadge = player.is_observer ? '👀 ' : '';
+                var healthStr = '❤️'.repeat(player.health || 3) + '🖤'.repeat((player.max_health || 3) - (player.health || 3));
                 div.innerHTML = `
                     <span>${{observerBadge}}${{isBot}}👤 ${{player.name}}</span>
+                    <span style="margin-left:10px;">${{healthStr}}</span>
                     ${{hostBadge}}
                 `;
                 container.appendChild(div);
             }});
             
             var startBtn = document.getElementById('start-game');
-            if (gameState.players.length >= 4 && gameState.isHost) {{
+            var alive = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            if (alive.length >= 4 && gameState.isHost && gameState.status === 'waiting') {{
                 startBtn.style.display = 'block';
-                startBtn.textContent = '🔥 Начать игру (' + gameState.players.length + ' игроков)';
+                startBtn.textContent = '🔥 Начать игру (' + alive.length + ' игроков)';
                 startBtn.disabled = false;
-            }} else if (gameState.isHost) {{
+            }} else if (gameState.isHost && gameState.status === 'waiting') {{
                 startBtn.style.display = 'block';
-                startBtn.textContent = '👥 Нужно ещё ' + (4 - gameState.players.length) + ' игроков';
+                startBtn.textContent = '👥 Нужно ещё ' + (4 - alive.length) + ' игроков';
                 startBtn.disabled = true;
             }} else {{
                 startBtn.style.display = 'none';
@@ -848,53 +1266,23 @@ HTML_PAGE = f'''<!DOCTYPE html>
             container.innerHTML = '';
             
             // Проверяем, в режиме ли наблюдения игрок
-            var isObserver = false;
-            for (var i = 0; i < gameState.players.length; i++) {{
-                if (String(gameState.players[i].id) === String(gameState.playerId)) {{
-                    if (gameState.players[i].is_observer) {{
-                        isObserver = true;
-                    }}
-                    break;
-                }}
-            }}
-            
-            // ★★★ ЕСЛИ ИГРОК В РЕЖИМЕ НАБЛЮДЕНИЯ ★★★
-            if (isObserver) {{
-                var activePlayers = gameState.players.filter(function(p) {{ return !p.is_observer; }});
-                var humanPlayers = activePlayers.filter(function(p) {{ return !p.is_bot; }});
-                var botPlayers = activePlayers.filter(function(p) {{ return p.is_bot; }});
-                
-                var statusText = '';
-                if (activePlayers.length === 0) {{
-                    statusText = '💀 Все игроки выбыли. Игра завершена.';
-                }} else if (humanPlayers.length === 0 && botPlayers.length > 0) {{
-                    statusText = '🤖 Остались только боты. Игра скоро завершится.';
-                }} else if (humanPlayers.length === 1 && botPlayers.length === 0) {{
-                    statusText = '🏆 Остался 1 игрок! Скоро будет победитель!';
-                }} else {{
-                    statusText = '👥 Активных игроков: ' + activePlayers.length + ' (людей: ' + humanPlayers.length + ', ботов: ' + botPlayers.length + ')';
-                }}
-                
+            if (gameState.isObserver || gameState.isEliminated) {{
                 container.innerHTML = `
                     <div style="text-align:center;padding:30px;background:#1a0a00;border-radius:12px;border:2px solid #FFB000;">
                         <h2 style="color:#FFB000;font-size:2rem;">👀 РЕЖИМ НАБЛЮДЕНИЯ</h2>
-                        <p style="opacity:0.8;margin-top:10px;font-size:1.1rem;">${{statusText}}</p>
-                        <p style="opacity:0.5;margin-top:5px;">Следите за игрой в реальном времени!</p>
+                        <p style="opacity:0.8;margin-top:10px;font-size:1.1rem;">Вы выбыли из игры</p>
+                        <p style="opacity:0.5;margin-top:5px;">Следите за игрой!</p>
                         <button id="refresh-btn" class="btn-neon" style="margin-top:20px;border-color:#FFB000;color:#FFB000;">🔄 Обновить</button>
                     </div>
                 `;
-                
                 document.getElementById('reveal-card').style.display = 'none';
                 document.getElementById('continue-btn').style.display = 'none';
-                
                 document.getElementById('refresh-btn')?.addEventListener('click', function() {{
                     refreshGameState();
                 }});
-                
                 return;
             }}
             
-            // ★★★ ЕСЛИ КАРТЫ НЕ ЗАГРУЖЕНЫ ★★★
             if (!gameState.myCards || gameState.myCards.length === 0) {{
                 container.innerHTML = '<p style="opacity:0.7;">Карты не загружены</p>';
                 return;
@@ -913,15 +1301,16 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     div.style.opacity = '0.7';
                 }}
                 
+                var icon = card.icon || '🃏';
                 var cardName = card.isRevealed ? card.name : '❓ Скрыто';
-                var cardEffect = card.isRevealed ? (card.effect || card.description || '') : 'Нажмите "Открыть карту"';
-                var cardRarity = card.isRevealed ? '<div class="card-rarity">⭐ ' + (card.rarity || 'Обычная') + '</div>' : '';
+                var cardDesc = card.isRevealed ? (card.desc || '') : 'Нажмите "Открыть карту"';
+                var roundBadge = card.round ? '📌 Раунд ' + card.round : '';
                 
                 div.innerHTML = `
-                    <div class="card-type">${{card.type || 'Карта'}}</div>
+                    <div class="card-type">${{icon}} ${{card.type || 'Карта'}}</div>
                     <div class="card-name">${{cardName}}</div>
-                    <div class="card-effect">${{cardEffect}}</div>
-                    ${{cardRarity}}
+                    <div class="card-effect">${{cardDesc}}</div>
+                    <div style="font-size:0.6rem;opacity:0.4;margin-top:5px;">${{roundBadge}}</div>
                 `;
                 container.appendChild(div);
             }});
@@ -931,7 +1320,6 @@ HTML_PAGE = f'''<!DOCTYPE html>
             var revealBtn = document.getElementById('reveal-card');
             var continueBtn = document.getElementById('continue-btn');
             
-            // ★★★ УПРАВЛЕНИЕ КНОПКАМИ ★★★
             if (gameState.status === 'ready') {{
                 revealBtn.style.display = 'none';
                 continueBtn.style.display = 'block';
@@ -950,6 +1338,43 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}
 
+        function showResults() {{
+            var container = document.getElementById('results-list');
+            container.innerHTML = '';
+            
+            var alive = gameState.players.filter(p => !p.is_observer && !p.is_eliminated);
+            var eliminated = gameState.players.filter(p => p.is_observer || p.is_eliminated);
+            
+            var html = '';
+            
+            if (alive.length > 0) {{
+                html += '<h3 style="color:#00FF00;">🏆 ВЫЖИВШИЕ</h3>';
+                alive.forEach(function(p) {{
+                    var healthStr = '❤️'.repeat(p.health || 3) + '🖤'.repeat((p.max_health || 3) - (p.health || 3));
+                    html += `
+                        <div class="result-card survivors">
+                            <strong>${{p.name}}</strong> ({{p.role || 'Неизвестно'}})
+                            <span style="margin-left:10px;">${{healthStr}}</span>
+                        </div>
+                    `;
+                }});
+            }}
+            
+            if (eliminated.length > 0) {{
+                html += '<h3 style="color:#FF0000;margin-top:20px;">💀 ВЫБЫВШИЕ</h3>';
+                eliminated.forEach(function(p) {{
+                    html += `
+                        <div class="result-card eliminated">
+                            <strong>${{p.name}}</strong> ({{p.role || 'Неизвестно'}})
+                            <span style="margin-left:10px;">👀 Наблюдатель</span>
+                        </div>
+                    `;
+                }});
+            }}
+            
+            container.innerHTML = html;
+        }}
+
         // ★★★ АВТООБНОВЛЕНИЕ КАЖДЫЕ 1.5 СЕКУНДЫ ★★★
         setInterval(async function() {{
             if (gameState.status !== 'finished') {{
@@ -965,19 +1390,40 @@ HTML_PAGE = f'''<!DOCTYPE html>
                     
                     var data = await response.json();
                     
-                    if (data.chat_id && data.status && data.status !== gameState.status) {{
-                        debugLog('🔄 Статус изменился: ' + gameState.status + ' -> ' + data.status);
-                        gameState.status = data.status;
+                    if (data.chat_id && data.phase && data.phase !== gameState.status) {{
+                        debugLog('🔄 Статус изменился: ' + gameState.status + ' -> ' + data.phase);
+                        gameState.status = data.phase;
                         gameState.players = data.players || [];
                         gameState.isHost = data.is_host || false;
+                        gameState.isObserver = data.is_observer || false;
+                        gameState.isEliminated = data.is_eliminated || false;
+                        gameState.currentRound = data.round || 0;
+                        gameState.gameLog = data.game_log || [];
                         updateUI();
                         
-                        if (data.status === 'voting') {{
+                        if (data.phase === 'voting') {{
                             await startVoting();
                         }}
                         
-                        if (data.status === 'playing' || data.status === 'ready') {{
-                            await getMyCards();
+                        if (data.phase === 'playing' || data.phase === 'ready') {{
+                            var myData = gameState.players.find(p => String(p.id) === String(gameState.playerId));
+                            if (myData) {{
+                                gameState.myCards = myData.cards || [];
+                                gameState.revealedCards = myData.revealed_cards || [];
+                            }}
+                            renderCards();
+                        }}
+                        
+                        if (data.phase === 'final_ready') {{
+                            await showFinalTitleSheet();
+                        }}
+                        
+                        if (data.phase === 'final_voting') {{
+                            await startFinalVoting();
+                        }}
+                        
+                        if (data.phase === 'finished') {{
+                            showResults();
                         }}
                     }}
                 }} catch (error) {{
@@ -986,14 +1432,14 @@ HTML_PAGE = f'''<!DOCTYPE html>
             }}
         }}, 1500);
 
-        debugLog('✅ Mini App готов!');
+        debugLog('✅ Mini App 2.0 готов!');
         debugLog('🔄 Автообновление каждые 1.5 секунды');
     </script>
 </body>
 </html>'''
 
 # ============================================
-# 7. CSS СТИЛИ
+# 7. CSS СТИЛИ (обновлённые)
 # ============================================
 CSS_STYLES = '''* {
     margin: 0;
@@ -1035,12 +1481,12 @@ body {
     border-radius: 12px;
     padding: 20px;
     margin: 10px 0;
-    box-shadow: 0 0 20px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 20px rgba(255, 176, 0, 0.2);
     transition: transform 0.3s;
 }
 .character-card:hover {
     transform: scale(1.02);
-    box-shadow: 0 0 40px rgba(255, 107, 53, 0.4);
+    box-shadow: 0 0 40px rgba(255, 176, 0, 0.4);
 }
 .card-type {
     color: #FFB000;
@@ -1075,7 +1521,7 @@ body {
 .btn-neon:hover:not(:disabled) {
     background: #FFB000;
     color: #0a0a0a;
-    box-shadow: 0 0 30px rgba(255, 107, 53, 0.6);
+    box-shadow: 0 0 30px rgba(255, 176, 0, 0.6);
 }
 .btn-neon:disabled {
     opacity: 0.4;
@@ -1111,9 +1557,22 @@ body {
     background: #0a2a0a;
     border: 2px solid #00ff00;
 }
-.survivor-item {
-    padding: 5px;
-    margin: 5px 0;
+#round-info {
+    background: linear-gradient(145deg, #1a0a00, #0a0500);
+    border: 1px solid #FFB000;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 15px;
+}
+#round-info span {
+    display: inline-block;
+}
+.skill-area {
+    border: 1px solid #00FF88;
+    border-radius: 8px;
+    padding: 15px;
+    margin-top: 15px;
+    background: rgba(0, 255, 136, 0.05);
 }'''
 
 # ============================================
@@ -1131,36 +1590,43 @@ def load_cards():
     
     CARDS = {
         "roles": [
-            {"name": "Шериф", "description": "Владеет револьвером", "rarity": "редкий"},
-            {"name": "Продавец мороженого", "description": "Всегда носит мороженое", "rarity": "обычный"},
-            {"name": "Таксист", "description": "Знает все дороги", "rarity": "обычный"},
-            {"name": "Инфлюенсер", "description": "Снимает всё на телефон", "rarity": "легендарный"},
-            {"name": "Повар", "description": "Готовит зомби-стейк", "rarity": "редкий"},
-            {"name": "Фокусник", "description": "Делает предметы исчезать", "rarity": "редкий"},
-            {"name": "Медиум", "description": "Разговаривает с духами", "rarity": "эпический"},
-            {"name": "Клоун-убийца", "description": "Смешит и убивает", "rarity": "легендарный"},
-            {"name": "Сантехник", "description": "Чинит что угодно", "rarity": "обычный"},
-            {"name": "Ютубер", "description": "Влог о выживании", "rarity": "обычный"},
+            {"name": "Шериф", "description": "Владеет револьвером и авторитетом", "rarity": "редкий"},
+            {"name": "Продавец мороженого", "description": "Всегда носит с собой вафельный стаканчик", "rarity": "обычный"},
+            {"name": "Таксист", "description": "Знает все дороги в городе", "rarity": "обычный"},
+            {"name": "Инфлюенсер", "description": "Снимает всё на телефон, даже зомби", "rarity": "легендарный"},
+            {"name": "Повар", "description": "Может приготовить что угодно, даже зомби-стейк", "rarity": "редкий"},
+            {"name": "Фокусник", "description": "Умеет делать предметы исчезать", "rarity": "редкий"},
+            {"name": "Медиум", "description": "Разговаривает с духами умерших", "rarity": "эпический"},
+            {"name": "Клоун-убийца", "description": "Смешит и убивает одновременно", "rarity": "легендарный"},
+            {"name": "Сантехник", "description": "Может починить что угодно", "rarity": "обычный"},
+            {"name": "Ютубер", "description": "Снимает влог о выживании", "rarity": "обычный"}
         ],
         "health": [
             {"name": "Здоров как бык", "bonus": "+2 к выживанию"},
             {"name": "Ранен (царапина)", "bonus": "-1 к выживанию"},
             {"name": "Под кайфом", "bonus": "Иногда галлюцинации"},
             {"name": "При смерти", "bonus": "Требует лекарства"},
+            {"name": "Не выспался", "bonus": "-1 к харизме"}
         ],
         "skills": [
-            {"name": "Метание ножей", "effect": "Убивает зомби с 20 метров"},
+            {"name": "Метание ножей", "effect": "Может убить зомби с 20 метров"},
             {"name": "Игра на гитаре", "effect": "Успокаивает зомби"},
             {"name": "Взлом автоматов", "effect": "Всегда есть еда"},
+            {"name": "Теннисный удар", "effect": "Отбивает головы зомби"},
+            {"name": "Разговор с животными", "effect": "Собаки и кошки помогают"}
         ],
         "items": [
             {"name": "Кольт .45", "effect": "6 патронов"},
             {"name": "Фляга с виски", "effect": "Повышает настроение"},
-            {"name": "Библия", "effect": "Отгоняет зомби"},
+            {"name": "Библия", "effect": "Отгоняет зомби крестом"},
+            {"name": "Запасные носки", "effect": "Чистые, всегда пригодятся"},
+            {"name": "Бензопила", "effect": "Очень громкая, но эффективная"}
         ],
         "secrets": [
-            {"name": "Торговал с зомби", "effect": "Все недовольны"},
-            {"name": "Убил напарника", "effect": "Не доверяют"},
+            {"name": "Торговал с зомби", "effect": "Все будут недовольны"},
+            {"name": "Убил напарника", "effect": "Больше никому не доверяют"},
+            {"name": "Был информатором", "effect": "Предатель"},
+            {"name": "Украл еду у других", "effect": "Недоверие"}
         ]
     }
     print("✅ Используются дефолтные карты")
@@ -1168,10 +1634,11 @@ def load_cards():
 # ============================================
 # 9. КОМАНДЫ БОТА
 # ============================================
+
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     await message.answer(
-        "🤠 Добро пожаловать в КАФЕ ОАЗИС!\n\n"
+        "🤠 Добро пожаловать в КАФЕ ОАЗИС 2.0!\n\n"
         "🎮 **Как играть:**\n"
         "1️⃣ Напиши /play в этом чате\n"
         "2️⃣ Нажми кнопку «Играть»\n"
@@ -1199,13 +1666,11 @@ async def cmd_toggle_debug(message: types.Message):
     
     toggle_debug()
     await message.answer(get_debug_command_response(), parse_mode="Markdown")
-    
-    # Логируем переключение
     log_debug(f"Команда /logs выполнена в чате {chat_id}")
 
 @dp.message(Command("play"))
 async def cmd_play(message: types.Message):
-    """Отправить игру в чат через send_game"""
+    """Создать игру и отправить ссылку"""
     
     print("=" * 60)
     print("🎮 КОМАНДА /play")
@@ -1214,52 +1679,32 @@ async def cmd_play(message: types.Message):
     print("=" * 60)
     
     chat_id = str(message.chat.id)
-    user_id = message.from_user.id
+    user_id = str(message.from_user.id)
     user_name = message.from_user.first_name or message.from_user.username or 'Игрок'
     
+    # Проверяем, есть ли уже игра в этом чате
     if chat_id in games:
         game = games[chat_id]
-        game_id = game['game_id']
-        print(f"✅ Найдена существующая игра: {game_id}")
-        
-        if game['status'] == 'finished':
-            print("⚠️ Игра завершена, создаём новую")
-            del games[chat_id]
-            game_id = str(uuid.uuid4())[:8]
-            games[chat_id] = {
-                'game_id': game_id,
-                'chat_id': chat_id,
-                'players': [],
-                'status': 'waiting',
-                'round': 0,
-                'max_rounds': 5,
-                'host_id': str(user_id),
-                'host_name': user_name,
-                'created_at': datetime.now().isoformat(),
-                'votes': {},
-                'eliminated': [],
-                'players_ready': [],
-            }
-            print(f"🆕 Создана новая игра: {game_id}")
-    else:
-        game_id = str(uuid.uuid4())[:8]
-        print(f"🆕 Создаём новую игру: {game_id}")
-        games[chat_id] = {
-            'game_id': game_id,
-            'chat_id': chat_id,
-            'players': [],
-            'status': 'waiting',
-            'round': 0,
-            'max_rounds': 5,
-            'host_id': str(user_id),
-            'host_name': user_name,
-            'created_at': datetime.now().isoformat(),
-            'votes': {},
-            'eliminated': [],
-            'players_ready': [],
-        }
-        print(f"✅ Игра создана: {games[chat_id]}")
+        if game.phase != GamePhase.FINISHED:
+            # Игра уже существует
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🎮 Играть",
+                    callback_game=CallbackGame()
+                )]
+            ])
+            await bot.send_game(
+                chat_id=message.chat.id,
+                game_short_name="oaziscaffee",
+                reply_markup=keyboard
+            )
+            return
     
+    # Создаём новую игру
+    game = create_game(chat_id, user_id, user_name)
+    games[chat_id] = game
+    
+    # Отправляем игру
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🎮 Играть",
@@ -1273,7 +1718,7 @@ async def cmd_play(message: types.Message):
         reply_markup=keyboard
     )
     
-    print("✅ Игра отправлена в чат!")
+    print(f"✅ Игра создана: {game.game_id}")
     print("=" * 60)
 
 @dp.message(Command("addbots"))
@@ -1281,6 +1726,7 @@ async def cmd_add_bots(message: types.Message):
     """Добавить ботов в игру (только ведущий)"""
     
     chat_id = str(message.chat.id)
+    user_id = str(message.from_user.id)
     
     if chat_id not in games:
         await message.answer("❌ Нет активной игры. Сначала создай игру через /play")
@@ -1288,11 +1734,11 @@ async def cmd_add_bots(message: types.Message):
     
     game = games[chat_id]
     
-    if str(message.from_user.id) != str(game['host_id']):
+    if game.host_id != user_id:
         await message.answer("⛔ Только ведущий может добавлять ботов!")
         return
     
-    if game['status'] != 'waiting':
+    if game.phase != GamePhase.WAITING:
         await message.answer("❌ Игра уже началась! Ботов можно добавлять только в лобби.")
         return
     
@@ -1310,7 +1756,7 @@ async def cmd_add_bots(message: types.Message):
         await message.answer("❌ Введи число! Например: /addbots 2")
         return
     
-    current_players = len(game['players'])
+    current_players = len(game.players)
     max_players = 6
     available = max_players - current_players
     
@@ -1320,7 +1766,7 @@ async def cmd_add_bots(message: types.Message):
     
     bot_count = 0
     added_names = []
-    used_names = [p['name'] for p in game['players']]
+    used_names = [p["name"] for p in game.players.values()]
     
     for i in range(count):
         available_names = [n for n in BOT_NAMES if n not in used_names]
@@ -1329,27 +1775,16 @@ async def cmd_add_bots(message: types.Message):
         
         bot_name = available_names[0]
         used_names.append(bot_name)
-        bot_id = f"bot_{uuid.uuid4().hex[:6]}"
         
-        player = {
-            'id': bot_id,
-            'name': bot_name,
-            'username': '',
-            'is_host': False,
-            'is_bot': True,
-            'is_observer': False,
-            'cards': [],
-            'revealed': [],
-        }
-        game['players'].append(player)
-        added_names.append(bot_name)
-        bot_count += 1
+        if game.add_bot(bot_name):
+            added_names.append(bot_name)
+            bot_count += 1
     
     await message.answer(
         f"🤖 Добавлено {bot_count} ботов:\n"
         f"{', '.join(added_names)}\n\n"
-        f"👥 Всего игроков: {len(game['players'])} из 6\n"
-        f"🎮 Статус: {game['status']}"
+        f"👥 Всего игроков: {len(game.players)} из 6\n"
+        f"🎮 Статус: {game.phase.value}"
     )
 
 @dp.message(Command("status"))
@@ -1361,21 +1796,23 @@ async def cmd_status(message: types.Message):
         return
     
     game = games[chat_id]
-    bot_count = sum(1 for p in game['players'] if p.get('is_bot', False))
-    human_count = len(game['players']) - bot_count
-    observer_count = sum(1 for p in game['players'] if p.get('is_observer', False))
-    active_count = len(game['players']) - observer_count
+    
+    alive = game.get_alive_players()
+    eliminated = game.eliminated_players
+    observers = list(game.observer_players)
+    bots = game.get_bot_players()
     
     await message.answer(
         f"📊 **Статус игры:**\n"
-        f"🎮 Game ID: `{game['game_id']}`\n"
-        f"👑 Ведущий: {game['host_name']}\n"
-        f"👥 Всего игроков: {len(game['players'])}\n"
-        f"👤 Активных: {active_count}\n"
-        f"👀 Наблюдателей: {observer_count}\n"
-        f"🤖 Ботов: {bot_count}\n"
-        f"📝 Статус: {game['status']}\n"
-        f"📊 Раунд: {game['round']} из {game['max_rounds']}",
+        f"🎮 Game ID: `{game.game_id}`\n"
+        f"👑 Ведущий: {game.host_name}\n"
+        f"👥 Всего игроков: {len(game.players)}\n"
+        f"👤 Активных: {len(alive)}\n"
+        f"💀 Выбывших: {len(eliminated)}\n"
+        f"👀 Наблюдателей: {len(observers)}\n"
+        f"🤖 Ботов: {len(bots)}\n"
+        f"📝 Фаза: {game.phase.value}\n"
+        f"📊 Раунд: {game.round} из {game.max_rounds}",
         parse_mode="Markdown"
     )
 
@@ -1388,8 +1825,9 @@ async def cmd_host(message: types.Message):
         return
     
     game = games[chat_id]
+    user_id = str(message.from_user.id)
     
-    if str(message.from_user.id) != str(game['host_id']):
+    if user_id != game.host_id:
         await message.answer("⛔ Только текущий ведущий может назначить нового!")
         return
     
@@ -1398,76 +1836,23 @@ async def cmd_host(message: types.Message):
         target_id = str(target_user.id)
         target_name = target_user.first_name or target_user.username or f"User {target_id}"
         
-        player_in_game = False
-        for player in game['players']:
-            if str(player['id']) == target_id:
-                player_in_game = True
-                break
-        
-        if not player_in_game:
+        if target_id not in game.players:
             await message.answer(f"❌ Игрок {target_name} не в игре!")
             return
         
-        game['host_id'] = target_id
-        game['host_name'] = target_name
+        game.host_id = target_id
+        game.host_name = target_name
         
-        for player in game['players']:
-            player['is_host'] = str(player['id']) == target_id
+        for player in game.players.values():
+            player["is_host"] = player["id"] == target_id
         
         await message.answer(f"👑 Ведущий передан {target_name}")
         return
     
-    command_parts = message.text.split()
-    if len(command_parts) < 2:
-        await message.answer(
-            "❌ Использование:\n"
-            "/host - ответь на сообщение игрока\n"
-            "/host 123456789 - по Telegram ID\n"
-            "/host @username - по username"
-        )
-        return
-    
-    target_input = command_parts[1].strip()
-    
-    if target_input.isdigit():
-        target_id = target_input
-        found_player = None
-        for player in game['players']:
-            if str(player['id']) == target_id:
-                found_player = player
-                break
-        
-        if found_player:
-            game['host_id'] = target_id
-            game['host_name'] = found_player['name']
-            for player in game['players']:
-                player['is_host'] = str(player['id']) == target_id
-            await message.answer(f"👑 Ведущий передан {found_player['name']}")
-            return
-        else:
-            await message.answer(f"❌ Игрок с ID {target_id} не найден в игре")
-            return
-    
-    username = target_input.replace('@', '').lower()
-    found_player = None
-    for player in game['players']:
-        if player.get('name', '').lower() == username:
-            found_player = player
-            break
-        if player.get('username', '').lower() == username:
-            found_player = player
-            break
-    
-    if found_player:
-        target_id = str(found_player['id'])
-        game['host_id'] = target_id
-        game['host_name'] = found_player['name']
-        for player in game['players']:
-            player['is_host'] = str(player['id']) == target_id
-        await message.answer(f"👑 Ведущий передан {found_player['name']}")
-        return
-    
-    await message.answer(f"❌ Игрок {target_input} не найден в игре")
+    await message.answer(
+        "❌ Использование:\n"
+        "/host - ответь на сообщение игрока"
+    )
 
 @dp.message(Command("whohost"))
 async def cmd_whohost(message: types.Message):
@@ -1478,21 +1863,11 @@ async def cmd_whohost(message: types.Message):
         return
     
     game = games[chat_id]
-    host_name = game.get('host_name', 'Неизвестно')
-    host_id = game.get('host_id', 'Нет ID')
-    
-    host_in_game = False
-    for player in game['players']:
-        if str(player['id']) == str(host_id):
-            host_in_game = True
-            host_name = player['name']
-            break
     
     await message.answer(
         f"👑 **Текущий ведущий:**\n"
-        f"Имя: {host_name}\n"
-        f"Статус: {'✅ В игре' if host_in_game else '❌ Не в игре'}\n"
-        f"👥 Всего игроков: {len(game['players'])}",
+        f"Имя: {game.host_name}\n"
+        f"👥 Всего игроков: {len(game.players)}",
         parse_mode="Markdown"
     )
 
@@ -1505,8 +1880,9 @@ async def cmd_stop_game(message: types.Message):
         return
     
     game = games[chat_id]
+    user_id = str(message.from_user.id)
     
-    if str(message.from_user.id) != str(game['host_id']):
+    if user_id != game.host_id:
         await message.answer("⛔ Только ведущий может остановить игру!")
         return
     
@@ -1520,6 +1896,7 @@ async def cmd_rules(message: types.Message):
 # ============================================
 # 10. ОБРАБОТЧИК ДЛЯ TELEGRAM GAMES
 # ============================================
+
 @dp.callback_query(lambda c: c.game_short_name is not None)
 async def game_callback(callback: types.CallbackQuery):
     """Обработка нажатия на кнопку Play в игре"""
@@ -1533,7 +1910,6 @@ async def game_callback(callback: types.CallbackQuery):
     user_name = callback.from_user.first_name or callback.from_user.username or 'Игрок'
     user_name_encoded = user_name.replace(' ', '%20')
     
-    # ★★★ ПОЛУЧАЕМ CHAT_ID ★★★
     if callback.message and callback.message.chat:
         chat_id = str(callback.message.chat.id)
         print(f"💬 Chat ID: {chat_id}")
@@ -1541,7 +1917,13 @@ async def game_callback(callback: types.CallbackQuery):
         chat_id = str(user_id)
         print(f"💬 Используем user_id как chat_id: {chat_id}")
     
-    # ★★★ ПЕРЕДАЁМ CHAT_ID В URL (для совместимости, но основное получение будет из initData) ★★★
+    # Проверяем, существует ли игра
+    if chat_id not in games:
+        # Создаём новую игру
+        game = create_game(chat_id, str(user_id), user_name)
+        games[chat_id] = game
+        print(f"🆕 Создана новая игра: {game.game_id}")
+    
     game_url = f"{WEBAPP_URL}?chat_id={chat_id}&user_id={user_id}&user_name={user_name_encoded}"
     print(f"🔗 URL игры: {game_url}")
     
@@ -1550,115 +1932,10 @@ async def game_callback(callback: types.CallbackQuery):
     print("=" * 60)
 
 # ============================================
-# 11. ГЕНЕРАЦИЯ КАРТ
-# ============================================
-def generate_cards_for_player():
-    cards = []
-    
-    role = random.choice(CARDS['roles'])
-    cards.append({
-        'type': 'Роль',
-        'name': role['name'],
-        'description': role['description'],
-        'rarity': role.get('rarity', 'обычный'),
-        'isRevealed': False,
-    })
-    
-    health = random.choice(CARDS['health'])
-    cards.append({
-        'type': 'Здоровье',
-        'name': health['name'],
-        'effect': health.get('bonus', ''),
-        'isRevealed': False,
-    })
-    
-    skill = random.choice(CARDS['skills'])
-    cards.append({
-        'type': 'Навык',
-        'name': skill['name'],
-        'effect': skill.get('effect', ''),
-        'isRevealed': False,
-    })
-    
-    item = random.choice(CARDS['items'])
-    cards.append({
-        'type': 'Предмет',
-        'name': item['name'],
-        'effect': item.get('effect', ''),
-        'isRevealed': False,
-    })
-    
-    secret = random.choice(CARDS['secrets'])
-    cards.append({
-        'type': 'Секрет',
-        'name': secret['name'],
-        'effect': secret.get('effect', ''),
-        'isRevealed': False,
-    })
-    
-    return cards
-
-# ============================================
-# 12. ФУНКЦИИ ДЛЯ БОТОВ
+# 11. API ОБРАБОТЧИКИ
 # ============================================
 
-def bot_reveal_all_cards(game):
-    """Боты открывают все свои карты"""
-    if not game:
-        return
-    
-    for player in game['players']:
-        if player.get('is_bot', False):
-            for card in player['cards']:
-                card['isRevealed'] = True
-            player['revealed'] = player['cards'].copy()
-            print(f"🤖 Бот {player['name']} открыл все карты")
-
-def bot_decide_vote(game, player_id):
-    """Бот выбирает, за кого голосовать (случайно)"""
-    if not game or not game['players']:
-        return None
-    
-    # Боты голосуют только за активных игроков (не наблюдателей)
-    available = [p for p in game['players'] if str(p['id']) != str(player_id) and not p.get('is_observer', False)]
-    if available:
-        return random.choice(available)['id']
-    return None
-
-# ============================================
-# 12.5. ФУНКЦИЯ ПРОВЕРКИ ОТКРЫТИЯ ВСЕХ КАРТ
-# ============================================
-def check_all_cards_revealed(game):
-    """Проверяет, открыли ли все живые игроки все карты"""
-    if not game:
-        return False
-    
-    # Только игроки, которые ещё в игре (не выбыли)
-    active_players = [p for p in game['players'] if not p.get('is_observer', False)]
-    
-    if not active_players:
-        return False
-    
-    all_revealed = True
-    for player in active_players:
-        cards = player.get('cards', [])
-        revealed = player.get('revealed', [])
-        if len(revealed) < len(cards):
-            all_revealed = False
-            break
-    
-    if all_revealed:
-        game['status'] = 'ready'
-        game['players_ready'] = []
-        return True
-    
-    return False
-
-# ============================================
-# 13. API ОБРАБОТЧИКИ
-# ============================================
 async def api_test(request):
-    print("🧪 Тестовый API вызван!")
     return web.json_response({
         'status': 'success',
         'message': 'API работает!',
@@ -1672,50 +1949,19 @@ async def api_get_state(request):
         player_id = data.get('player_id')
         chat_id = data.get('chat_id')
         
-        # ★★★ ИЩЕМ ИГРУ ПО CHAT_ID ★★★
         if not chat_id:
-            print("❌ chat_id не передан!")
-            return web.json_response({
-                'status': 'error',
-                'message': 'chat_id не передан'
-            }, status=400)
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
         
         game = games.get(str(chat_id))
         
         if not game:
-            print(f"❌ Игра не найдена для чата: {chat_id}")
-            # ★★★ ЗАПАСНОЙ ВАРИАНТ: ищем по player_id ★★★
-            if player_id:
-                for g in games.values():
-                    if any(str(p['id']) == str(player_id) for p in g['players']):
-                        game = g
-                        print(f"✅ Игра найдена по player_id: {game['chat_id']}")
-                        break
-            if not game:
-                return web.json_response({
-                    'status': 'error',
-                    'message': f'Игра не найдена для чата {chat_id}'
-                }, status=404)
+            return web.json_response({
+                'status': 'error',
+                'message': f'Игра не найдена для чата {chat_id}'
+            }, status=404)
         
-        print(f"✅ Игра найдена для чата: {chat_id}")
-        
-        player = None
-        is_observer = False
-        if player_id:
-            player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
-            if player:
-                is_observer = player.get('is_observer', False)
-        
-        return web.json_response({
-            'game_id': game['game_id'],
-            'chat_id': game['chat_id'],
-            'status': game['status'],
-            'players': game['players'],
-            'round': game['round'],
-            'max_rounds': game['max_rounds'],
-            'is_host': str(game['host_id']) == str(player_id) if player_id else False,
-            'is_observer': is_observer,
-        })
+        state = game.get_game_state(player_id)
+        return web.json_response(state)
     except Exception as e:
         print(f"❌ Ошибка: {e}")
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1737,38 +1983,17 @@ async def api_join_game(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        if game['status'] != 'waiting':
-            return web.json_response({'status': 'error', 'message': 'Игра уже началась'}, status=400)
-        
-        if len(game['players']) >= 6:
-            return web.json_response({'status': 'error', 'message': 'Игра заполнена'}, status=400)
-        
-        if player_id and any(str(p['id']) == str(player_id) for p in game['players']):
+        if game.add_player(str(player_id), player_name):
             return web.json_response({
                 'status': 'success',
-                'message': 'Игрок уже в игре',
-                'players': game['players'],
+                'message': f'Игрок {player_name} присоединился',
+                'players': game.get_players_list(player_id),
             })
-        
-        is_host = str(game['host_id']) == str(player_id) if player_id else False
-        
-        player = {
-            'id': str(player_id) if player_id else 'unknown',
-            'name': player_name,
-            'username': username,
-            'is_host': is_host,
-            'is_bot': False,
-            'is_observer': False,
-            'cards': [],
-            'revealed': [],
-        }
-        game['players'].append(player)
-        
-        return web.json_response({
-            'status': 'success',
-            'message': f'Игрок {player_name} присоединился',
-            'players': game['players'],
-        })
+        else:
+            return web.json_response({
+                'status': 'error',
+                'message': 'Не удалось присоединиться к игре'
+            }, status=400)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
@@ -1787,41 +2012,21 @@ async def api_start_game(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        if str(game['host_id']) != str(player_id):
+        if str(game.host_id) != str(player_id):
             return web.json_response({'status': 'error', 'message': 'Только ведущий может начать игру'}, status=403)
         
-        if len(game['players']) < 4:
-            return web.json_response({'status': 'error', 'message': 'Нужно минимум 4 игрока'}, status=400)
-        
-        # ★★★ ПРОВЕРКА: если в игре только боты ★★★
-        if all(p.get('is_bot', False) for p in game['players']):
-            game['status'] = 'finished'
-            await bot.send_message(
-                game['chat_id'],
-                f"🤖 **ПОБЕДА БОТОВ!**\n\n"
-                f"В игре не было людей. Боты захватили кафе ОАЗИС!"
-            )
-            return web.json_response({'status': 'success', 'message': 'Игра завершена (только боты)'})
-        
-        for player in game['players']:
-            player['cards'] = generate_cards_for_player()
-            player['revealed'] = []
-            player['is_observer'] = False
-        
-        game['players_ready'] = []
-        bot_reveal_all_cards(game)
-        
-        game['status'] = 'playing'
-        game['round'] = 1
-        
-        await bot.send_message(
-            game['chat_id'],
-            f"🔥 ИГРА НАЧАЛАСЬ!\n\n👥 Игроков: {len(game['players'])}\n📝 Раунд 1 из {game['max_rounds']}\n\n🤖 Боты уже открыли свои карты!"
-        )
-        
-        await check_all_revealed(game)
-        
-        return web.json_response({'status': 'success', 'message': 'Игра началась'})
+        if game.start_game():
+            return web.json_response({
+                'status': 'success',
+                'message': 'Игра началась!',
+                'disaster': game.disaster,
+                'round': game.round,
+            })
+        else:
+            return web.json_response({
+                'status': 'error',
+                'message': 'Не удалось начать игру. Проверьте, что минимум 4 игрока.'
+            }, status=400)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
@@ -1840,14 +2045,14 @@ async def api_get_cards(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
+        player = game.players.get(str(player_id))
         if not player:
             return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
         
         return web.json_response({
             'status': 'success',
-            'cards': player['cards'],
-            'revealed': player['revealed'],
+            'cards': player.get('all_cards', []),
+            'revealed': player.get('revealed_cards', []),
         })
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
@@ -1868,52 +2073,16 @@ async def api_reveal_card(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
-        if not player:
-            return web.json_response({'status': 'error', 'message': 'Игрок не найден'}, status=404)
+        result = game.reveal_card(str(player_id), card_index)
         
-        # ★★★ ПРОВЕРКА: если игрок в режиме наблюдения ★★★
-        if player.get('is_observer', False):
-            return web.json_response({
-                'status': 'error', 
-                'message': 'Вы в режиме наблюдения и не можете открывать карты'
-            }, status=403)
-        
-        if card_index >= len(player['cards']):
-            return web.json_response({'status': 'error', 'message': 'Неверный индекс'}, status=400)
-        
-        card = player['cards'][card_index]
-        if card.get('isRevealed', False):
-            return web.json_response({'status': 'error', 'message': 'Эта карта уже открыта'}, status=400)
-        
-        card['isRevealed'] = True
-        player['revealed'].append(card)
-        
-        # Боты всегда открывают все карты сразу
-        bot_reveal_all_cards(game)
-        
-        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ (БЕЗ ПЕРЕВОДА В НАБЛЮДАТЕЛИ) ★★★
-        all_revealed = check_all_cards_revealed(game)
-        
-        if all_revealed:
-            await bot.send_message(
-                game['chat_id'],
-                f"📢 Все игроки открыли карты!\n\nНажмите **«Продолжить»** в приложении, чтобы перейти к голосованию.",
-                parse_mode="Markdown"
-            )
-        
-        return web.json_response({
-            'status': 'success',
-            'card': card,
-            'revealed_cards': player['revealed'],
-            'all_revealed': all_revealed,
-            'is_observer': player.get('is_observer', False),
-        })
+        if result.get('success'):
+            return web.json_response(result)
+        else:
+            return web.json_response({'status': 'error', 'message': result.get('message', 'Ошибка')}, status=400)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 async def api_continue(request):
-    """Обработчик нажатия кнопки 'Продолжить'"""
     print(f"📨 CONTINUE запрос")
     try:
         data = await request.json()
@@ -1928,63 +2097,8 @@ async def api_continue(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # ★★★ ПРОВЕРЯЕМ, В ИГРЕ ЛИ ИГРОК (НЕ НАБЛЮДАТЕЛЬ) ★★★
-        player = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
-        if not player:
-            return web.json_response({
-                'status': 'success',
-                'all_ready': False,
-                'message': 'Игрок выбыл, не участвует',
-                'ready_count': len(game.get('players_ready', [])),
-                'total_players': len(game['players']),
-                'is_observer': True,
-            })
-        
-        # Если игрок в режиме наблюдения — он не может нажимать "Продолжить"
-        if player.get('is_observer', False):
-            return web.json_response({
-                'status': 'success',
-                'all_ready': False,
-                'message': 'Вы в режиме наблюдения',
-                'ready_count': len(game.get('players_ready', [])),
-                'total_players': len(game['players']),
-                'is_observer': True,
-            })
-        
-        if game['status'] != 'ready':
-            return web.json_response({'status': 'error', 'message': 'Игра не в состоянии готовности'}, status=400)
-        
-        if 'players_ready' not in game:
-            game['players_ready'] = []
-        
-        if str(player_id) not in game['players_ready']:
-            game['players_ready'].append(str(player_id))
-            print(f"✅ Игрок {player_id} готов продолжить")
-        
-        # Боты всегда готовы
-        for p in game['players']:
-            if p.get('is_bot', False) and str(p['id']) not in game['players_ready']:
-                game['players_ready'].append(str(p['id']))
-                print(f"🤖 Бот {p['name']} готов продолжить")
-        
-        all_ready = len(game['players_ready']) >= len([p for p in game['players'] if not p.get('is_observer', False)])
-        
-        if all_ready:
-            game['status'] = 'voting'
-            game['players_ready'] = []
-            print(f"🗳️ Все игроки готовы! Начинаем голосование")
-            await bot.send_message(
-                game['chat_id'],
-                f"🗳️ **ГОЛОСОВАНИЕ!**\n\nВсе игроки готовы. Голосуйте в приложении!\n👀 Наблюдатели следят за голосованием."
-            )
-        
-        return web.json_response({
-            'status': 'success',
-            'all_ready': all_ready,
-            'ready_count': len(game['players_ready']),
-            'total_players': len([p for p in game['players'] if not p.get('is_observer', False)]),
-            'is_observer': player.get('is_observer', False),
-        })
+        result = game.player_ready(str(player_id))
+        return web.json_response(result)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
@@ -2003,16 +2117,19 @@ async def api_get_voting_players(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Только активные игроки (не наблюдатели) могут голосовать
-        players_for_vote = [
-            {
-                'id': str(p['id']),
-                'name': p['name'],
-                'role': next((c['name'] for c in p['cards'] if c.get('isRevealed') and c.get('type') == 'Роль'), 'Неизвестно')
-            }
-            for p in game['players']
-            if str(p['id']) != str(player_id) and not p.get('is_observer', False)
-        ]
+        alive = game.get_alive_players()
+        players_for_vote = []
+        for pid in alive:
+            if str(pid) == str(player_id):
+                continue
+            player = game.players.get(pid)
+            if player:
+                players_for_vote.append({
+                    'id': pid,
+                    'name': player.get('name', 'Игрок'),
+                    'role': player.get('role', 'Неизвестно'),
+                    'revealed_cards': player.get('revealed_cards', []),
+                })
         
         return web.json_response({'status': 'success', 'players': players_for_vote})
     except Exception as e:
@@ -2034,161 +2151,110 @@ async def api_submit_vote(request):
         if not game:
             return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        # Проверяем, не наблюдатель ли игрок
-        voter = next((p for p in game['players'] if str(p['id']) == str(player_id)), None)
-        if voter and voter.get('is_observer', False):
-            return web.json_response({
-                'status': 'error', 
-                'message': 'Вы в режиме наблюдения и не можете голосовать'
-            }, status=403)
+        result = game.submit_vote(str(player_id), str(target_id))
+        return web.json_response(result)
+    except Exception as e:
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
+
+async def api_use_skill(request):
+    print(f"📨 USE SKILL запрос")
+    try:
+        data = await request.json()
+        player_id = data.get('player_id')
+        chat_id = data.get('chat_id')
+        target_id = data.get('target_id')
         
-        game['votes'][str(player_id)] = str(target_id)
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
         
-        # Боты голосуют автоматически
-        for p in game['players']:
-            if p.get('is_bot', False) and str(p['id']) not in game['votes']:
-                target = bot_decide_vote(game, p['id'])
-                if target:
-                    game['votes'][str(p['id'])] = str(target)
-                    print(f"🤖 Бот {p['name']} проголосовал за {target}")
+        game = games.get(str(chat_id))
         
-        all_voted = len(game['votes']) >= len([p for p in game['players'] if not p.get('is_observer', False)])
+        if not game:
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
         
-        if all_voted:
-            vote_results = {}
-            for voter_id, target in game['votes'].items():
-                vote_results[target] = vote_results.get(target, 0) + 1
-            
-            max_votes = max(vote_results.values())
-            eliminated = [p for p in game['players'] if str(p['id']) in vote_results and vote_results[str(p['id'])] == max_votes]
-            
-            if eliminated:
-                eliminated_player = eliminated[0]
-                
-                # ★★★ ВЫБЫВШИЙ СТАНОВИТСЯ НАБЛЮДАТЕЛЕМ ★★★
-                eliminated_player['is_observer'] = True
-                
-                # Удаляем из активных игроков (но оставляем в списке для истории)
-                game['players'] = [p for p in game['players'] if str(p['id']) != str(eliminated_player['id'])]
-                game['eliminated'].append(eliminated_player)
-                
-                await bot.send_message(
-                    game['chat_id'],
-                    f"🧟 **ВЫБЫВАЕТ:** {eliminated_player['name']}\n\n"
-                    f"Голосов: {max_votes} из {len(game['votes'])}\n"
-                    f"Осталось: {len([p for p in game['players'] if not p.get('is_observer', False)])} игроков\n\n"
-                    f"👀 {eliminated_player['name']} теперь наблюдает за игрой!"
-                )
-                
-                # ★★★ ОТПРАВЛЯЕМ ЛИЧНОЕ СООБЩЕНИЕ ВЫБЫВШЕМУ ★★★
-                try:
-                    await bot.send_message(
-                        int(eliminated_player['id']) if str(eliminated_player['id']).isdigit() else eliminated_player['id'],
-                        f"💀 **Вас выгнали из игры!**\n\n"
-                        f"Но вы можете наблюдать за её продолжением.\n"
-                        f"Откройте игру снова, чтобы увидеть, что происходит.",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    print(f"⚠️ Не удалось отправить сообщение выбывшему: {e}")
-            
-            # ★★★ ПРОВЕРЯЕМ, КТО ОСТАЛСЯ ★★★
-            active_players = [p for p in game['players'] if not p.get('is_observer', False)]
-            human_players = [p for p in active_players if not p.get('is_bot', False)]
-            bot_players = [p for p in active_players if p.get('is_bot', False)]
-            
-            # Сценарий 1: Остались только боты → победа ботов
-            if len(human_players) == 0 and len(bot_players) > 0:
-                game['status'] = 'finished'
-                await bot.send_message(
-                    game['chat_id'],
-                    f"🤖 **ПОБЕДА БОТОВ!**\n\n"
-                    f"Все люди выбыли. Боты захватили кафе ОАЗИС!\n"
-                    f"🧟‍♂️ Зомби и боты теперь правят миром..."
-                )
-                return web.json_response({
-                    'status': 'success',
-                    'all_voted': True,
-                    'game_finished': True,
-                    'winner': 'bots',
-                })
-            
-            # Сценарий 2: Остался 1 человек → победа человека
-            if len(human_players) == 1 and len(bot_players) == 0:
-                game['status'] = 'finished'
-                winner = human_players[0]
-                winner_name = winner['name']
-                
-                # Отправляем сообщение с кубком в чат
-                await bot.send_message(
-                    game['chat_id'],
-                    f"🏆 **ПОБЕДА!** 🏆\n\n"
-                    f"🎉 {winner_name} выжил в кафе ОАЗИС!\n"
-                    f"🌟 Единственный человек, переживший зомби-апокалипсис!\n\n"
-                    f"💪 **{winner_name} — легенда!**"
-                )
-                
-                # ★★★ ОТПРАВЛЯЕМ КРАСИВОЕ СООБЩЕНИЕ ПОБЕДИТЕЛЮ ★★★
-                try:
-                    await bot.send_message(
-                        int(winner['id']) if str(winner['id']).isdigit() else winner['id'],
-                        f"🏆 **ТЫ ПОБЕДИЛ!** 🏆\n\n"
-                        f"🎊 Поздравляем! Ты единственный выживший в кафе ОАЗИС!\n"
-                        f"🌟 Ты пережил зомби-апокалипсис и стал легендой!\n\n"
-                        f"💀 {len(game['eliminated'])} игроков не смогли пройти твой путь...\n\n"
-                        f"🔥 Ты — настоящий герой Техаса!",
-                        parse_mode="Markdown"
-                    )
-                except Exception as e:
-                    print(f"⚠️ Не удалось отправить сообщение победителю: {e}")
-                
-                return web.json_response({
-                    'status': 'success',
-                    'all_voted': True,
-                    'game_finished': True,
-                    'winner': 'human',
-                    'winner_name': winner_name,
-                })
-            
-            # Сценарий 3: Игра продолжается
-            game['round'] += 1
-            game['status'] = 'playing'
-            game['votes'] = {}
-            game['players_ready'] = []
-            
-            # Сбрасываем карты для живых игроков
-            for p in game['players']:
-                if not p.get('is_observer', False):
-                    p['revealed'] = []
-                    for card in p['cards']:
-                        card['isRevealed'] = False
-            
-            # Боты снова открывают карты
-            bot_reveal_all_cards(game)
-            
-            await bot.send_message(
-                game['chat_id'],
-                f"📝 **РАУНД {game['round']}**\n\n"
-                f"Новый раунд! Открывайте карты.\n"
-                f"🤖 Боты уже открыли свои карты!\n"
-                f"👀 Наблюдатели следят за игрой.\n"
-                f"👥 Активных игроков: {len([p for p in game['players'] if not p.get('is_observer', False)])}"
-            )
-            
-            # Проверяем, все ли открыли карты
-            check_all_cards_revealed(game)
+        result = game.use_skill(str(player_id), str(target_id) if target_id else None)
+        return web.json_response(result)
+    except Exception as e:
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
+
+async def api_final_title(request):
+    print(f"📨 FINAL TITLE запрос")
+    try:
+        data = await request.json()
+        player_id = data.get('player_id')
+        chat_id = data.get('chat_id')
+        
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
+        
+        if not game:
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+        
+        # Собираем данные для титульного листа
+        players_data = []
+        for pid, player in game.players.items():
+            if pid in game.eliminated_players or pid in game.observer_players:
+                continue
+            players_data.append({
+                'id': pid,
+                'name': player.get('name', 'Игрок'),
+                'role': player.get('role', 'Неизвестно'),
+                'health': player.get('health', 3),
+                'max_health': player.get('max_health', 3),
+                'is_observer': False,
+                'is_eliminated': False,
+                'all_cards': player.get('all_cards', []),
+                'rounds': player.get('rounds', {}),
+                'revealed_cards': player.get('revealed_cards', []),
+            })
+        
+        # Генерируем HTML титульного листа
+        html = get_final_title_sheet(players_data)
+        
+        # Сохраняем биографии
+        biographies = {}
+        for player in players_data:
+            builder = BiographyBuilder(player)
+            biographies[player['id']] = builder.to_html(show_secrets=True)
         
         return web.json_response({
             'status': 'success',
-            'all_voted': all_voted,
-            'vote_count': len(game['votes']),
-            'total_players': len([p for p in game['players'] if not p.get('is_observer', False)]),
+            'html': html,
+            'biographies': biographies,
         })
+    except Exception as e:
+        print(f"❌ Ошибка финального листа: {e}")
+        return web.json_response({'status': 'error', 'message': str(e)}, status=500)
+
+async def api_final_vote(request):
+    print(f"📨 FINAL VOTE запрос")
+    try:
+        data = await request.json()
+        player_id = data.get('player_id')
+        chat_id = data.get('chat_id')
+        target_id = data.get('target_id')
+        
+        if not chat_id:
+            return web.json_response({'status': 'error', 'message': 'chat_id не передан'}, status=400)
+        
+        game = games.get(str(chat_id))
+        
+        if not game:
+            return web.json_response({'status': 'error', 'message': 'Игра не найдена'}, status=404)
+        
+        # Если финальное голосование ещё не началось — запускаем
+        if game.phase == GamePhase.FINAL_READY:
+            game.start_final_voting()
+        
+        result = game.submit_final_vote(str(player_id), str(target_id))
+        return web.json_response(result)
     except Exception as e:
         return web.json_response({'status': 'error', 'message': str(e)}, status=500)
 
 # ============================================
-# 14. CORS MIDDLEWARE
+# 12. CORS MIDDLEWARE
 # ============================================
 @web.middleware
 async def cors_middleware(request, handler):
@@ -2199,7 +2265,7 @@ async def cors_middleware(request, handler):
     return response
 
 # ============================================
-# 15. СТАТИЧЕСКИЕ ФАЙЛЫ
+# 13. СТАТИЧЕСКИЕ ФАЙЛЫ
 # ============================================
 async def serve_html(request):
     return web.Response(text=HTML_PAGE, content_type='text/html')
@@ -2215,7 +2281,7 @@ async def handle_options(request):
     })
 
 # ============================================
-# 16. ЗАПУСК
+# 14. ЗАПУСК
 # ============================================
 async def main():
     load_cards()
@@ -2237,6 +2303,9 @@ async def main():
     app.router.add_post('/api/game/continue', api_continue)
     app.router.add_post('/api/game/voting/players', api_get_voting_players)
     app.router.add_post('/api/game/vote', api_submit_vote)
+    app.router.add_post('/api/game/skill', api_use_skill)
+    app.router.add_post('/api/game/final/title', api_final_title)
+    app.router.add_post('/api/game/final/vote', api_final_vote)
     
     app.router.add_get('/health', lambda r: web.Response(text="OK"))
     
@@ -2248,6 +2317,7 @@ async def main():
     print(f"📱 Mini App: {WEBAPP_URL}")
     print(f"🧪 Тестовый API: {WEBAPP_URL}/api/test")
     print(f"📡 API отладки: {WEBAPP_URL}/api/debug/status")
+    print(f"🔊 Звуки: {len(sound_manager._sounds)} звуков загружено")
     
     await site.start()
     await asyncio.Event().wait()
