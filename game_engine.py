@@ -139,11 +139,8 @@ class GameEngine:
         return PlayerStatus.ALIVE.value
     
     def get_current_player_id(self) -> Optional[str]:
-        if not self.player_order or self.phase != GamePhase.PLAYING:
-            return None
-        if self.current_player_index >= len(self.player_order):
-            return None
-        return self.player_order[self.current_player_index]
+        # ★★★ БОЛЬШЕ НЕ ИСПОЛЬЗУЕТСЯ, НО ОСТАВЛЯЕМ ДЛЯ СОВМЕСТИМОСТИ ★★★
+        return None
     
     def get_alive_players(self) -> List[str]:
         return [
@@ -253,10 +250,9 @@ class GameEngine:
     
     async def _auto_play_bots(self):
         """Автоматический ход ботов в фоновом режиме"""
-        await asyncio.sleep(1)  # Небольшая задержка перед началом
+        await asyncio.sleep(1)
         
         while self.phase == GamePhase.PLAYING or self.phase == GamePhase.READY:
-            # Проверяем всех ботов
             for player_id in self.get_bot_players():
                 if player_id in self.observer_players or player_id in self.eliminated_players:
                     continue
@@ -268,12 +264,10 @@ class GameEngine:
                 round_cards = player["rounds"].get(self.round, [])
                 revealed = player["cards_by_round_revealed"].get(self.round, [])
                 
-                # Если бот ещё не открыл все карты
                 if len(revealed) < len(round_cards):
                     self._auto_reveal_bot(player_id)
-                    await asyncio.sleep(0.5)  # Задержка между открытиями
+                    await asyncio.sleep(0.5)
                 
-                # Если бот открыл все карты, но ещё не нажал "Продолжить"
                 elif self.phase == GamePhase.READY:
                     if str(player_id) not in self.players_ready:
                         self.player_ready(player_id)
@@ -296,9 +290,8 @@ class GameEngine:
         if player.get("is_bot", False):
             return self._auto_reveal_bot(player_id)
         
-        current = self.get_current_player_id()
-        if current and current != player_id:
-            return {"success": False, "message": "Сейчас не ваш ход"}
+        # ★★★ УБИРАЕМ ПРОВЕРКУ НА ХОД ★★★
+        # (каждый может открывать карты в любое время)
         
         round_cards = player["rounds"].get(self.round, [])
         if not round_cards:
@@ -317,10 +310,25 @@ class GameEngine:
         
         self._add_log(f"🃏 {player['name']} открыл карту: {format_card_for_display(card)}")
         
-        all_revealed = len(player["cards_by_round_revealed"][self.round]) >= len(round_cards)
+        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
+        all_revealed = True
+        for pid in self.get_alive_players():
+            p = self.players[pid]
+            round_cards_count = len(p["rounds"].get(self.round, []))
+            revealed_count = len(p["cards_by_round_revealed"].get(self.round, []))
+            if revealed_count < round_cards_count:
+                all_revealed = False
+                break
         
         if all_revealed:
-            self._move_to_next_player()
+            self.phase = GamePhase.READY
+            self.players_ready = set()
+            self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
+            self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
+            
+            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
+            for pid in self.get_bot_players():
+                self.player_ready(pid)
         
         return {
             "success": True,
@@ -355,12 +363,25 @@ class GameEngine:
         
         self._add_log(f"🤖 Бот {player['name']} автоматически открыл карту: {format_card_for_display(card)}")
         
-        all_revealed = len(player["cards_by_round_revealed"][self.round]) >= len(round_cards)
+        # ★★★ ПРОВЕРЯЕМ, ВСЕ ЛИ ОТКРЫЛИ КАРТЫ ★★★
+        all_revealed = True
+        for pid in self.get_alive_players():
+            p = self.players[pid]
+            round_cards_count = len(p["rounds"].get(self.round, []))
+            revealed_count = len(p["cards_by_round_revealed"].get(self.round, []))
+            if revealed_count < round_cards_count:
+                all_revealed = False
+                break
         
         if all_revealed:
-            self._move_to_next_player()
-            # ★★★ БОТ АВТОМАТИЧЕСКИ НАЖИМАЕТ "ПРОДОЛЖИТЬ" ★★★
-            self.player_ready(player_id)
+            self.phase = GamePhase.READY
+            self.players_ready = set()
+            self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
+            self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
+            
+            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
+            for bot_pid in self.get_bot_players():
+                self.player_ready(bot_pid)
         
         return {
             "success": True,
@@ -368,63 +389,6 @@ class GameEngine:
             "all_revealed": all_revealed,
             "player_name": player["name"],
         }
-    
-    def _move_to_next_player(self) -> None:
-        alive = self.get_alive_players()
-        
-        all_done = True
-        for pid in alive:
-            player = self.players[pid]
-            round_cards = player["rounds"].get(self.round, [])
-            revealed = len(player["cards_by_round_revealed"].get(self.round, []))
-            if revealed < len(round_cards):
-                all_done = False
-                break
-        
-        if all_done:
-            self.phase = GamePhase.READY
-            self.players_ready = set()
-            self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
-            self._add_log("⏳ Нажмите 'Продолжить' чтобы перейти к голосованию")
-            
-            # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
-            for pid in self.get_bot_players():
-                self.player_ready(pid)
-            return
-        
-        start_index = self.current_player_index
-        for i in range(len(self.player_order)):
-            idx = (start_index + i + 1) % len(self.player_order)
-            pid = self.player_order[idx]
-            
-            if pid not in alive:
-                continue
-            
-            player = self.players[pid]
-            round_cards = player["rounds"].get(self.round, [])
-            revealed = len(player["cards_by_round_revealed"].get(self.round, []))
-            
-            if revealed < len(round_cards):
-                self.current_player_index = idx
-                self._add_log(f"🔄 Следующий ход: {player['name']}")
-                
-                # ★★★ ЕСЛИ СЛЕДУЮЩИЙ — БОТ, ОТКРЫВАЕМ АВТОМАТИЧЕСКИ ★★★
-                if player.get("is_bot", False):
-                    asyncio.create_task(self._auto_reveal_bot_async(pid))
-                return
-        
-        self.phase = GamePhase.READY
-        self.players_ready = set()
-        self._add_log(f"📢 Все игроки открыли карты в раунде {self.round}")
-        
-        # ★★★ БОТЫ АВТОМАТИЧЕСКИ НАЖИМАЮТ "ПРОДОЛЖИТЬ" ★★★
-        for pid in self.get_bot_players():
-            self.player_ready(pid)
-    
-    async def _auto_reveal_bot_async(self, player_id: str):
-        """Асинхронное автоматическое открытие карт для бота"""
-        await asyncio.sleep(0.5)
-        self._auto_reveal_bot(player_id)
     
     def player_ready(self, player_id: str) -> Dict[str, Any]:
         if self.phase != GamePhase.READY:
@@ -481,7 +445,6 @@ class GameEngine:
             if pid in self.observer_players or pid in self.eliminated_players:
                 continue
             
-            # Бот выбирает случайную цель
             alive = self.get_alive_players()
             targets = [p for p in alive if p != pid]
             if targets:
